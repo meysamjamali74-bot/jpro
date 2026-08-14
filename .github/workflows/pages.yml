@@ -18,17 +18,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Rebuild sanitized JPro UI
+
+      - name: Rebuild and validate sanitized JPro UI
         shell: bash
         run: |
           cat .deploy-clean/legacy.part*.b64 | base64 -d | xz -d > legacy.html
           test -s legacy.html
           grep -q 'JPro' legacy.html
           ! grep -q 'PRD-000126' legacy.html
-      - uses: actions/configure-pages@v5
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('legacy.html')
+          print('legacy bytes=',p.stat().st_size)
+          print('legacy sha256=',hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+          mkdir -p site
+          cp index.html cloud.css cloud.js config.js legacy.html site/
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: site
+
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
