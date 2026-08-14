@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#17365D">
-  <meta name="description" content="JPro ERP Cloud Pilot — هلدینگ، حسابداری، فروش، انبار و عملیات">
+  <meta name="description" content="JPro ERP Cloud — هلدینگ، حسابداری، فروش، انبار و عملیات">
   <title>JPro ERP Cloud</title>
   <link rel="stylesheet" href="./cloud.css">
 </head>
@@ -16,7 +16,7 @@
       <div id="authPanel">
         <label>ایمیل</label><input id="email" type="email" autocomplete="username">
         <label>رمز عبور</label><input id="password" type="password" autocomplete="current-password">
-        <div class="actions"><button id="loginBtn" class="primary">ورود</button><button id="signupBtn">ساخت حساب اولیه</button></div>
+        <div class="actions"><button id="loginBtn" class="primary">ورود</button><button id="signupBtn">ساخت حساب</button></div>
         <div id="authMessage" class="message"></div>
       </div>
       <div id="companyPanel" class="hidden">
@@ -24,10 +24,13 @@
         <div class="actions"><button id="openCompanyBtn" class="primary">ورود به JPro</button></div>
       </div>
       <div id="onboardPanel" class="hidden">
-        <h2>راه‌اندازی شرکت اول</h2><p>این حساب هنوز عضو هیچ شرکتی نیست.</p>
-        <label>نام شرکت</label><input id="newCompanyName" value="JPro ERP">
+        <h2>راه‌اندازی یا عضویت</h2><p>این حساب هنوز عضو هیچ شرکتی نیست.</p>
+        <label>نام شرکت جدید</label><input id="newCompanyName" value="JPro ERP">
         <label>کد شرکت</label><input id="newCompanyCode" value="JPRO">
-        <div class="actions"><button id="createCompanyBtn" class="primary">ایجاد شرکت و ورود</button></div>
+        <div class="actions"><button id="createCompanyBtn" class="primary">ایجاد شرکت</button></div>
+        <hr style="border:0;border-top:1px solid #e4eaf0;margin:18px 0">
+        <label>یا کد عضویت شرکت موجود</label><input id="joinCode" placeholder="مثلاً A1B2C3D4E5">
+        <div class="actions"><button id="joinBtn">ارسال درخواست عضویت</button></div>
       </div>
     </div>
   </div>
@@ -43,6 +46,6 @@
     <div id="syncBanner" class="sync-banner hidden">اطلاعات جدید از سرور دریافت شد.</div>
   </main>
   <script src="./config.js"></script>
-  <script type="module" src="./cloud.js"></script>
+  <script type="module" src="./cloud-v2.js"></script>
 </body>
 </html>
