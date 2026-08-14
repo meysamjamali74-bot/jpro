@@ -1,41 +1,74 @@
-# JPro ERP Cloud Pilot
+# JPro ERP Cloud
 
-نسخه گذار JPro ERP v3.3 برای استفاده تحت‌وب با GitHub + Supabase.
+JPro ERP برای استفاده چندکاربره تحت‌وب با GitHub + Supabase.
 
-## معماری فعلی
+## نسخه زنده
 
-- `index.html` — ورود ابری و Cloud Shell بدون به‌هم‌زدن چیدمان ERP
-- `legacy.html` — رابط کامل JPro ERP v3.3
-- `cloud.js` — Supabase Auth، Company Context، Sync و Realtime
-- `config.js` — Project URL و **Publishable Key** (نه Service Role)
-- `supabase/migrations/0001_jpro_cloud_core.sql` — دیتابیس و RLS
-- `.github/workflows/pages.yml` — آماده GitHub Pages
+- Host اصلی: Supabase Edge Function `jpro-app`
+- URL: `https://klbrajeljnqdjburxrto.supabase.co/functions/v1/jpro-app/`
+- Health: `https://klbrajeljnqdjburxrto.supabase.co/functions/v1/jpro-app/health`
+- Frontend فعال: `cloud-v3.js`
+- مدیریت اعضا/نقش‌ها: `cloud-admin.js`
+
+## معماری
+
+- `index.html` — ورود، ساخت حساب، انتخاب شرکت و Join Code
+- `legacy.html` — رابط Sanitized JPro ERP
+- `cloud-v3.js` — Auth، Company Context، Sync اتمیک، Realtime و Storage
+- `cloud-admin.js` — تأیید عضویت، نقش، واحد و فعال/غیرفعال‌سازی کاربران
+- `config.js` — URL پروژه و Runtime Config Endpoint؛ هیچ Secret/API Key در Repo ذخیره نمی‌شود
+- `.deploy-clean/` — payload پاک‌سازی‌شده رابط برای materialize کردن `legacy.html`
+- `.deploy-edge/` — payload فشرده برای Edge Host
+
+## Supabase
+
+پروژه فعال: `amory-hair-salon` / `klbrajeljnqdjburxrto`
+
+JPro به جداول و سرویس‌های زیر متصل است:
+
+- `profiles`
+- `companies`
+- `units`
+- `company_memberships`
+- `join_requests`
+- `erp_records`
+- `attachments`
+- `audit_events`
+- Private Storage bucket: `jpro-private`
+- Realtime روی `erp_records`
+
+RLS برای جداول JPro فعال است. جداول قدیمی Amory نیز قفل شده‌اند و دسترسی API ناشناس/کاربر عادی به آنها قطع شده، ولی داده‌ها حذف نشده‌اند.
+
+## ورود و عضویت
+
+1. کاربر اول با Email/Password حساب می‌سازد.
+2. شرکت اول را می‌سازد و Admin می‌شود.
+3. کد عضویت شرکت در Cloud > کاربران قابل مشاهده است.
+4. سایر کاربران حساب می‌سازند و Join Code را وارد می‌کنند.
+5. Admin از Cloud > کاربران درخواست را تأیید و Role/Unit تعیین می‌کند.
+
+نقش‌ها شامل Admin، مدیرعامل، مالی، حسابدار، خزانه‌دار، صندوقدار، مدیر فروش، فروشنده، انباردار، لجستیک، منابع انسانی، حسابرس و متقاضی است.
 
 ## امنیت
 
-- Service Role یا Secret Key نباید در Frontend یا GitHub قرار بگیرد.
-- Frontend فقط از Supabase Publishable Key استفاده می‌کند.
-- تمام جداول Public دارای RLS هستند.
-- دسترسی داده بر اساس عضویت در شرکت محدود می‌شود.
-- Auditor در پایگاه داده Read-only است.
-- امضای Cloud در Pilot با ورود مجدد رمز حساب Supabase تأیید می‌شود.
+- Service Role / Database Password / JWT Secret در Frontend یا GitHub وجود ندارد.
+- Publishable Key در زمان اجرا از Edge Function عمومی Config دریافت می‌شود.
+- دسترسی داده بر اساس Auth + Membership + RLS انجام می‌شود.
+- Auditor برای داده‌های ERP Read-only است.
+- ضمائم در Storage خصوصی و مسیر شرکت نگهداری می‌شوند.
+- امضای Cloud با Re-authentication رمز حساب تأیید می‌شود.
+- Audit Trail برای تغییرات عضویت و عملیات حساس ثبت می‌شود.
 
-## راه‌اندازی
+## Sync
 
-1. پروژه Supabase مخصوص JPro را به اتصال ChatGPT/Supabase متصل یا Refresh کنید.
-2. Migration را روی پروژه اعمال کنید.
-3. Project URL و Publishable Key را در `config.js` قرار دهید.
-4. GitHub Pages را از Workflow موجود منتشر کنید.
-5. کاربر اول با Email/Password وارد می‌شود، شرکت اول را می‌سازد و نقش admin می‌گیرد.
+نسخه فعلی رابط JPro را حفظ می‌کند و داده‌های ERP را به Postgres همگام می‌کند. حذف رکوردها به صورت Tombstone/atomic sync مدیریت می‌شود و Realtime تغییرات سایر کاربران را به مرورگرها می‌رساند.
 
-## مسیر Production
-
-Cloud Pilot رابط فعلی را نگه می‌دارد و داده‌های LocalStorage را به Supabase Sync می‌کند. ماژول‌های حساس حسابداری به‌تدریج باید به جداول تخصصی Postgres منتقل شوند: دفتر کل، فروش/فاکتور، خزانه و چک، انبار و Batch، Workflow و Audit Trail.
+مرحله بعدی Production، نرمال‌سازی کامل ماژول‌های حساس به جداول تخصصی است: دفترکل و سطر سند، فاکتور و خطوط، پرداخت و چک، انبار/Batch، Workflow و Posting حسابداری.
 
 ## نسخه نصبی آینده
 
-همین Frontend بعداً می‌تواند داخل Electron یا Tauri بسته‌بندی شود و همچنان به Supabase/Postgres متصل بماند.
+همین Frontend بعداً می‌تواند داخل Electron یا Tauri بسته‌بندی شود و به همین Supabase/Postgres متصل بماند.
 
-## چیدمان Cloud
+## یادداشت امنیت GitHub
 
-Cloud Shell هیچ Header یا فضای اضافه‌ای به ERP تحمیل نمی‌کند؛ رابط اصلی تمام viewport را در اختیار دارد و کنترل Cloud فقط شناور است.
+نسخه فعلی شاخه `main` بدون Seed عملیاتی منتشر می‌شود. اگر Repo در گذشته Public بوده، برای حذف کامل داده‌های احتمالی از تاریخچه Git، Repository باید Private شود یا History با ابزار مدیریتی GitHub بازنویسی شود.
