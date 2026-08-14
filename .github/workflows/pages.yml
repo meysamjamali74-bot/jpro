@@ -37,6 +37,17 @@ jobs:
           Path('legacy.html').write_text(text, encoding='utf-8')
           print(f'Materialized sanitized legacy.html: {len(html)} bytes')
           PY
+          test -s index.html
+          test -s legacy.html
+          test -s cloud.css
+          test -s config.js
+          test -s cloud-v3.js
+          test -s cloud-admin-v2.js
+          node --check --input-type=module < cloud-v3.js
+          node --check --input-type=module < cloud-admin-v2.js
+          grep -q 'cloud-v3.js' index.html
+          grep -q 'cloud-admin-v2.js' index.html
+          grep -q 'config.js' index.html
       - name: Commit materialized UI when changed
         shell: bash
         run: |
