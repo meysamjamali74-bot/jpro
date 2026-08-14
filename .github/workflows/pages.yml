@@ -46,8 +46,10 @@ jobs:
           mkdir -p site
           cp index.html cloud.css cloud-v3.js config.js legacy.html site/
           test -s site/legacy.html
-      - name: Configure GitHub Pages
+      - name: Configure and enable GitHub Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
