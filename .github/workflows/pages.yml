@@ -34,7 +34,7 @@ jobs:
           print('legacy sha256=',hashlib.sha256(p.read_bytes()).hexdigest())
           PY
           mkdir -p site
-          cp index.html cloud.css cloud.js config.js legacy.html site/
+          cp index.html cloud.css cloud-v2.js config.js legacy.html site/
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
