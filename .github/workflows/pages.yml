@@ -1,23 +1,20 @@
-name: Deploy JPro to GitHub Pages
+name: Build sanitized JPro UI
 on:
   push:
     branches: ["main"]
   workflow_dispatch:
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 concurrency:
-  group: pages
+  group: jpro-ui-build
   cancel-in-progress: true
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - name: Rebuild and validate sanitized JPro UI
         shell: bash
         run: |
@@ -30,10 +27,7 @@ jobs:
           raw = ''.join(Path(p).read_text(encoding='utf-8', errors='ignore') for p in parts)
           clean = re.sub(r'[^A-Za-z0-9+/=]', '', raw)
           clean += '=' * ((4 - len(clean) % 4) % 4)
-          try:
-              html = lzma.decompress(base64.b64decode(clean, validate=False))
-          except Exception as exc:
-              raise SystemExit(f'Clean JPro payload decode failed: {exc}')
+          html = lzma.decompress(base64.b64decode(clean, validate=False))
           text = html.decode('utf-8')
           low = text.lower()
           if '<html' not in low or '</html>' not in low or 'jpro' not in low:
@@ -41,18 +35,17 @@ jobs:
           if 'PRD-000126' in text:
               raise SystemExit('Sanitization check failed: production seed detected')
           Path('legacy.html').write_text(text, encoding='utf-8')
-          print(f'Rebuilt sanitized legacy.html: {len(html)} bytes from {len(parts)} clean parts')
+          print(f'Materialized sanitized legacy.html: {len(html)} bytes')
           PY
-          mkdir -p site
-          cp index.html cloud.css cloud-v3.js config.js legacy.html site/
-          test -s site/legacy.html
-      - name: Configure and enable GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Commit materialized UI when changed
+        shell: bash
+        run: |
+          if git diff --quiet -- legacy.html; then
+            echo "legacy.html already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add legacy.html
+          git commit -m "build: materialize sanitized JPro UI [skip ci]"
+          git push
