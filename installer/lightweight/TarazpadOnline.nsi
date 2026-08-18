@@ -9,7 +9,7 @@ SetCompressor /SOLID lzma
 Name "${APPNAME}"
 Caption "${APPNAME} ${VERSION}"
 OutFile "build\Tarazpad-ERP-Web-Setup-Light-${VERSION}.exe"
-InstallDir "$COMMONAPPDATA\Tarazpad\bootstrap"
+InstallDir "$PROGRAMFILES64\Tarazpad\Bootstrap"
 ShowInstDetails show
 
 VIProductVersion "0.3.0.0"
@@ -25,8 +25,9 @@ Section "Install Tarazpad ERP" SEC_MAIN
   SetShellVarContext all
   SetOutPath "$INSTDIR"
   File "Install-TarazpadOnline.ps1"
+  File "Run-TarazpadOnline.ps1"
   DetailPrint "Checking installed prerequisites and installing Tarazpad..."
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\Install-TarazpadOnline.ps1"' $0
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\Run-TarazpadOnline.ps1"' $0
   ${If} $0 != 0
     MessageBox MB_ICONSTOP|MB_OK "Tarazpad installation failed with error code $0.$\r$\nSee C:\ProgramData\Tarazpad\server\logs for the installer log."
     SetErrorLevel $0
