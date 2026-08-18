@@ -9,6 +9,13 @@ on:
       - 'database/**'
       - 'installer/windows-server/**'
       - '.github/workflows/windows-server-installer.yml'
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'database/**'
+      - 'installer/windows-server/**'
+      - '.github/workflows/windows-server-installer.yml'
 
 jobs:
   build-native-server-installer:
