@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { pool, migrate, healthCheck, withTransaction } from './db.js';
 import { authenticate, requireAuth, requireRole } from './auth.js';
 import { calculateCommission } from './commission.js';
+import { registerEnterpriseRoutes } from './enterprise.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
@@ -50,7 +51,7 @@ async function bootstrapAdmin() {
   });
 }
 
-app.get('/api/health', async (_req,res)=>{try{res.json({ok:await healthCheck(),service:'tarazpad-api',version:'0.1.0'})}catch(e){res.status(503).json({ok:false,error:e.message})}});
+app.get('/api/health', async (_req,res)=>{try{res.json({ok:await healthCheck(),service:'tarazpad-api',version:'0.2.0'})}catch(e){res.status(503).json({ok:false,error:e.message})}});
 app.post('/api/auth/login', async (req,res)=>{const {email,password}=req.body||{};if(!email||!password)return res.status(400).json({error:'EMAIL_AND_PASSWORD_REQUIRED'});const result=await authenticate(String(email).trim().toLowerCase(),String(password));if(!result)return res.status(401).json({error:'INVALID_CREDENTIALS'});res.json(result)});
 app.use('/api',requireAuth);
 app.get('/api/me',(req,res)=>res.json({user:req.user}));
@@ -75,6 +76,7 @@ app.get('/api/logistics/trips',async(req,res)=>{const [rows]=await pool.execute(
 app.post('/api/commissions/calculate',requireRole('SALES_MANAGER','FINANCE_MANAGER'),async(req,res)=>res.json(calculateCommission(req.body||{})));
 app.get('/api/finance/trial-balance',requireRole('ACCOUNTANT','FINANCE_MANAGER'),async(req,res)=>{const [rows]=await pool.execute(`SELECT a.code,a.title,COALESCE(SUM(CASE WHEN je.status='POSTED' THEN jl.debit ELSE 0 END),0) debit,COALESCE(SUM(CASE WHEN je.status='POSTED' THEN jl.credit ELSE 0 END),0) credit,COALESCE(SUM(CASE WHEN je.status='POSTED' THEN jl.debit-jl.credit ELSE 0 END),0) balance FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id=a.id LEFT JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE a.company_id=? GROUP BY a.id ORDER BY a.code`,[req.user.companyId]);res.json(rows)});
 
+registerEnterpriseRoutes(app);
 app.use('/api',(req,res)=>res.status(404).json({error:'API_NOT_FOUND',path:req.path}));
 app.use(express.static(webDir,{index:'index.html',maxAge:process.env.NODE_ENV==='production'?'1h':0}));
 app.use((_req,res)=>res.sendFile(path.join(webDir,'index.html')));
