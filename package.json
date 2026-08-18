@@ -1,0 +1,14 @@
+{
+  "name": "tarazpad-erp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tarazpad Enterprise ERP foundation - MySQL, web and Windows desktop client",
+  "scripts": {
+    "start": "npm --prefix apps/api start",
+    "dev": "npm --prefix apps/api run dev",
+    "test": "npm --prefix apps/api test",
+    "check": "node --check apps/api/src/server.js && node --check apps/api/src/db.js && node --check apps/api/src/auth.js && node --check apps/api/src/commission.js && node --check apps/web/app.js",
+    "desktop:build": "npm --prefix apps/desktop run build"
+  },
+  "engines": {"node": ">=22"}
+}
