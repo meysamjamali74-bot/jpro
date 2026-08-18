@@ -1,6 +1,7 @@
 Unicode True
 RequestExecutionLevel admin
-SetCompressor /SOLID lzma
+SetCompressor zlib
+!include "LogicLib.nsh"
 
 !define APPNAME "Tarazpad ERP Web Server"
 !define VERSION "0.2.0"
@@ -8,7 +9,7 @@ SetCompressor /SOLID lzma
 Name "${APPNAME}"
 Caption "${APPNAME} ${VERSION}"
 OutFile "build\Tarazpad-ERP-Web-Server-Setup-${VERSION}.exe"
-InstallDir "$PROGRAMDATA\Tarazpad\server"
+InstallDir "$WINDIR\..\ProgramData\Tarazpad\server"
 ShowInstDetails show
 ShowUninstDetails show
 
@@ -19,6 +20,13 @@ VIAddVersionKey "CompanyName" "Tarazpad"
 VIAddVersionKey "FileVersion" "0.2.0"
 VIAddVersionKey "ProductVersion" "0.2.0"
 
+Function .onInit
+  ReadEnvStr $0 "ProgramData"
+  ${If} $0 != ""
+    StrCpy $INSTDIR "$0\Tarazpad\server"
+  ${EndIf}
+FunctionEnd
+
 Page instfiles
 UninstPage uninstConfirm
 UninstPage instfiles
@@ -27,13 +35,23 @@ Section "Install Tarazpad ERP Server" SEC_MAIN
   SetShellVarContext all
   SetOutPath "$INSTDIR"
   DetailPrint "Extracting Tarazpad server payload..."
-  File /r "build\staging\*"
+  SetCompress auto
+  File /r /x prereqs "build\staging\*"
+  SetOutPath "$INSTDIR\prereqs"
+  SetCompress off
+  File /r "build\staging\prereqs\*"
+  SetCompress auto
+  SetOutPath "$INSTDIR"
 
   DetailPrint "Detecting prerequisites and configuring server..."
   ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\Install-TarazpadServer.ps1"' $0
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP|MB_OK "Tarazpad setup stopped with error code $0.$\r$\nSee C:\ProgramData\Tarazpad\server\logs for details."
-    Abort
+    IfSilent silent_install_error interactive_install_error
+    interactive_install_error:
+      MessageBox MB_ICONSTOP|MB_OK "Tarazpad setup stopped with error code $0.$\r$\nSee C:\ProgramData\Tarazpad\server\logs for details."
+    silent_install_error:
+      SetErrorLevel $0
+      Quit
   ${EndIf}
 
   WriteUninstaller "$INSTDIR\Uninstall-TarazpadServer.exe"

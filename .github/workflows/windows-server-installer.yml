@@ -80,6 +80,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Install-TarazpadServer.ps1' -Raw))
+          $null=[scriptblock]::Create((Get-Content 'installer/windows-server/CI-TestNativeInstaller.ps1' -Raw))
           node --check apps/api/src/server.js
           node --check apps/api/src/db.js
           node --check apps/web/app.js
@@ -102,31 +103,21 @@ jobs:
           if(!(Test-Path $exe)){throw 'Setup EXE not produced.'}
           Get-FileHash $exe -Algorithm SHA256 | Format-List | Out-File 'build/SHA256SUMS.txt'
 
-      - name: Full native install and idempotency test
+      - name: Full native configuration and second-run idempotency test
+        timeout-minutes: 12
         shell: powershell
-        run: |
-          $ErrorActionPreference='Stop'
-          $exe=(Resolve-Path 'installer/windows-server/build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe').Path
-          $p=Start-Process $exe -ArgumentList '/S' -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "First setup run failed: $($p.ExitCode)"}
-          for($i=0;$i -lt 90;$i++){
-            try{$h=Invoke-RestMethod 'http://127.0.0.1:8080/api/health' -TimeoutSec 2;if($h.ok){break}}catch{}
-            Start-Sleep 1
-          }
-          if(!$h.ok){throw 'Tarazpad health check failed after native installation.'}
-          $cfgPath='C:\ProgramData\Tarazpad\server\config\server.json'
-          $before=Get-Content $cfgPath -Raw | ConvertFrom-Json
-          if(!(Get-Service 'TarazpadMySQL' -ErrorAction Stop)){throw 'TarazpadMySQL service missing.'}
-          if(!(Test-Path 'C:\ProgramData\Tarazpad\server\INITIAL-LOGIN.txt')){throw 'Initial credentials file missing.'}
-          $p2=Start-Process $exe -ArgumentList '/S' -Wait -PassThru
-          if($p2.ExitCode -ne 0){throw "Second setup run failed: $($p2.ExitCode)"}
-          $after=Get-Content $cfgPath -Raw | ConvertFrom-Json
-          if($before.installedAt -ne $after.installedAt){throw 'Idempotency failure: existing server configuration was replaced.'}
-          if($before.mysqlPassword -ne $after.mysqlPassword){throw 'Idempotency failure: database credentials changed on reinstall.'}
-          $h2=Invoke-RestMethod 'http://127.0.0.1:8080/api/health' -TimeoutSec 10
-          if(!$h2.ok){throw 'Health check failed after second installer run.'}
-          Write-Host "Prerequisite source: $($after.mysqlSource), MySQL $($after.mysqlVersion)"
-          Write-Host 'Native install + second-run skip/idempotency test passed.'
+        run: ./installer/windows-server/CI-TestNativeInstaller.ps1
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-Native-Installer-Diagnostics
+          path: |
+            C:/ProgramData/Tarazpad/server/logs/**
+            C:/ProgramData/Tarazpad/server/my.ini
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload native Windows web server setup
         uses: actions/upload-artifact@v4
