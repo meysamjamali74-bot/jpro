@@ -9,9 +9,15 @@ if(!(Test-Path $installer)){throw 'Tarazpad installer script is missing.'}
 $exists=$false
 try{& schtasks.exe /Query /TN $task 1>$null 2>$null;if($LASTEXITCODE -eq 0){$exists=$true}}catch{}
 if(!$exists){
-  $dummy='powershell.exe -NoProfile -WindowStyle Hidden -Command "Start-Sleep 600"'
-  & schtasks.exe /Create /TN $task /SC ONCE /ST 23:59 /RU SYSTEM /RL HIGHEST /TR $dummy /F 1>$null 2>$null
-  if($LASTEXITCODE -eq 0){& schtasks.exe /Run /TN $task 1>$null 2>$null;Start-Sleep 1}
+  $bootstrap='C:\ProgramData\Tarazpad\bootstrap'
+  New-Item $bootstrap -ItemType Directory -Force|Out-Null
+  $dummy=Join-Path $bootstrap 'dummy.cmd'
+  '@echo off' | Set-Content $dummy -Encoding ascii
+  'ping.exe -t 127.0.0.1 >nul' | Add-Content $dummy -Encoding ascii
+  try{
+    & schtasks.exe /Create /TN $task /SC ONCE /ST 23:59 /RU SYSTEM /RL HIGHEST /TR $dummy /F 1>$null 2>$null
+    if($LASTEXITCODE -eq 0){& schtasks.exe /Run /TN $task 1>$null 2>$null;Start-Sleep 1}
+  }catch{}
 }
 
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer
