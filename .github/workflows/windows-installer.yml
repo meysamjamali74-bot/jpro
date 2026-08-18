@@ -1,0 +1,32 @@
+name: Windows Desktop Installer
+on:
+  push:
+    branches: [main, tarazpad-v1]
+    paths:
+      - 'apps/desktop/**'
+      - '.github/workflows/windows-installer.yml'
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - '.github/workflows/windows-installer.yml'
+  workflow_dispatch:
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm install
+      - name: Build Windows installer
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-ERP-Windows-Setup
+          path: apps/desktop/release/*.exe
+          if-no-files-found: error

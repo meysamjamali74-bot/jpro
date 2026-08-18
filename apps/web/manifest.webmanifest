@@ -1,0 +1,10 @@
+{
+  "name": "ترازپاد ERP",
+  "short_name": "ترازپاد",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07152e",
+  "theme_color": "#0a1f46",
+  "lang": "fa",
+  "dir": "rtl"
+}

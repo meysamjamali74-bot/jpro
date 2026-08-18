@@ -1,0 +1,67 @@
+name: Tarazpad CI
+on:
+  push:
+    branches: [main, tarazpad-v1]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_test_2026
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: tarazpad_test_2026
+        ports: [3306:3306]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_test_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install API dependencies
+        working-directory: apps/api
+        run: npm install
+      - name: Syntax and unit tests
+        run: |
+          node --check apps/api/src/server.js
+          node --check apps/api/src/db.js
+          node --check apps/api/src/auth.js
+          node --check apps/api/src/commission.js
+          node --check apps/web/app.js
+          npm --prefix apps/api test
+      - name: MySQL integration smoke test
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: tarazpad_test_2026
+          JWT_SECRET: integration_test_secret_that_is_long_enough_2026_tarazpad
+          TARAZPAD_ADMIN_EMAIL: admin@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Test_Admin_2026!
+          TARAZPAD_ADMIN_NAME: Test Admin
+        run: |
+          node apps/api/src/server.js > /tmp/tarazpad.log 2>&1 &
+          echo $! > /tmp/tarazpad.pid
+          for i in {1..40}; do curl -fsS http://127.0.0.1:8080/api/health && break || sleep 2; done
+          TOKEN=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"Strong_Test_Admin_2026!"}' | jq -r .token)
+          test -n "$TOKEN" && test "$TOKEN" != "null"
+          CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/parties -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"name":"مشتری تست","partyType":"LEGAL","roles":["CUSTOMER"]}' | jq -r .id)
+          PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/products -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"sku":"TEST-001","name":"کالای تست","unit":"عدد","salePrice":100000}' | jq -r .id)
+          INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/sales/invoices -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"lines\":[{\"productId\":$PRODUCT,\"qty\":2,\"unitPrice\":100000}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/sales/invoices/$INVOICE/post" -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' | jq -e '.ok == true'
+          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "authorization: Bearer $TOKEN" | jq -e 'map(select(.code=="110100" and .debit==200000)) | length == 1'
+          curl -fsS http://127.0.0.1:8080/api/dashboard/summary -H "authorization: Bearer $TOKEN" | jq -e '.sales_month >= 200000'
+          kill $(cat /tmp/tarazpad.pid)
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarazpad-ci-log
+          path: /tmp/tarazpad.log

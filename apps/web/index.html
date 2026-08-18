@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07152e" />
+  <title>ترازپاد ERP</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast"></div>
+  <section id="loginView" class="login-shell">
+    <div class="login-brand glass">
+      <img src="/assets/tarazpad-brand.webp" alt="ترازپاد ERP" />
+      <div class="login-brand-overlay">
+        <span class="eyebrow">Enterprise Accounting & ERP</span>
+        <h1>ترازپاد</h1>
+        <p>سامانه جامع حسابداری، فروش، انبار، لجستیک، CRM و اتوماسیون سازمانی</p>
+      </div>
+    </div>
+    <form id="loginForm" class="login-card glass">
+      <div class="logo-mark">TP</div><h2>ورود به ترازپاد</h2><p class="muted">حساب سازمانی خود را وارد کنید.</p>
+      <label>ایمیل<input id="email" type="email" autocomplete="username" required placeholder="admin@tarazpad.local" /></label>
+      <label>رمز عبور<input id="password" type="password" autocomplete="current-password" required placeholder="••••••••" /></label>
+      <button class="primary" type="submit">ورود امن</button><small id="loginError" class="error"></small>
+      <div class="security-note">MySQL • Audit Trail • Role Based Access • RTL</div>
+    </form>
+  </section>
+  <section id="appView" class="app-shell hidden">
+    <aside id="sidebar" class="sidebar glass">
+      <div class="brand-mini"><img src="/assets/tarazpad-brand.webp" alt="ترازپاد" /><div><strong>ترازپاد</strong><small>ERP Enterprise</small></div></div>
+      <div class="side-tools"><input id="menuSearch" placeholder="جستجوی منو..." /><button id="collapseMenu" title="جمع کردن منو">☰</button></div>
+      <nav id="menu"></nav><div class="sidebar-footer"><span id="userName">—</span><button id="logoutBtn">خروج</button></div>
+    </aside>
+    <main class="workspace">
+      <header class="topbar glass"><div class="crumb"><span id="pageTitle">داشبورد</span><small id="pageSubtitle">نمای مدیریتی ترازپاد</small></div><div class="global-search"><span>⌕</span><input id="globalSearch" placeholder="جستجوی مشتری، فاکتور، کالا، سند... (Ctrl + K)" /></div><div class="top-actions"><button id="themeBtn" title="تنظیمات ظاهر">◐</button><button id="widgetBtn" title="کتابخانه ویجت‌ها">▦</button><button id="refreshBtn" title="بروزرسانی">↻</button></div></header>
+      <div class="content-scroll">
+        <section id="statusRibbon" class="status-ribbon"></section>
+        <section id="dashboardPage" class="page active"><div class="page-head"><div><h2>داشبورد مدیریتی</h2><p>ویجت‌ها را جابه‌جا، حذف یا تغییر اندازه دهید.</p></div><button class="ghost" id="saveLayoutBtn">ذخیره چیدمان</button></div><div id="widgetGrid" class="widget-grid"></div></section>
+        <section id="modulePage" class="page"><div class="page-head"><div><h2 id="moduleTitle">—</h2><p id="moduleDesc">—</p></div><div class="page-actions"><button class="ghost" id="moduleRefresh">بروزرسانی</button><button class="primary" id="moduleNew">ایجاد جدید</button></div></div><div class="toolbar glass-sub"><input id="moduleSearch" placeholder="جستجو..." /><select id="moduleFilter"><option value="">همه وضعیت‌ها</option></select><button id="exportCsv">خروجی CSV</button></div><div class="table-wrap glass-sub"><table id="moduleTable"><thead></thead><tbody></tbody></table><div id="emptyState" class="empty hidden">داده‌ای برای نمایش وجود ندارد.</div></div></section>
+      </div>
+    </main>
+  </section>
+  <aside id="widgetDrawer" class="drawer glass hidden"><div class="drawer-head"><h3>کتابخانه ویجت‌ها</h3><button data-close="widgetDrawer">×</button></div><input id="widgetSearch" placeholder="جستجوی ویجت..."/><div id="widgetLibrary" class="widget-library"></div></aside>
+  <aside id="themeDrawer" class="drawer glass hidden"><div class="drawer-head"><h3>استودیوی ظاهر</h3><button data-close="themeDrawer">×</button></div><label>فونت<select id="fontFamily"><option value="Tahoma">Tahoma</option><option value="Arial">Arial</option><option value="system-ui">System UI</option></select></label><label>اندازه فونت<input id="fontSize" type="range" min="12" max="18" value="14" /></label><label>رنگ منو<input id="menuColor" type="color" value="#0a1f46" /></label><label>رنگ تأکیدی<input id="accentColor" type="color" value="#22d3ee" /></label><label>شفافیت شیشه<input id="glassOpacity" type="range" min="35" max="95" value="72" /></label><label>Blur<input id="glassBlur" type="range" min="4" max="32" value="18" /></label><label>تصویر پس‌زمینه<input id="backgroundFile" type="file" accept="image/*" /></label><button id="resetTheme" class="ghost">بازنشانی ظاهر</button></aside>
+  <div id="modal" class="modal hidden"><div class="modal-card glass"><div class="drawer-head"><h3 id="modalTitle">ایجاد</h3><button id="modalClose">×</button></div><form id="entityForm" class="form-grid"></form></div></div>
+  <script type="module" src="/app.js"></script>
+</body></html>
