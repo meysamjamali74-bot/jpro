@@ -1,6 +1,7 @@
 Unicode True
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
+!include "LogicLib.nsh"
 
 !define APPNAME "Tarazpad ERP Web Server"
 !define VERSION "0.2.0"
@@ -8,7 +9,7 @@ SetCompressor /SOLID lzma
 Name "${APPNAME}"
 Caption "${APPNAME} ${VERSION}"
 OutFile "build\Tarazpad-ERP-Web-Server-Setup-${VERSION}.exe"
-InstallDir "$PROGRAMDATA\Tarazpad\server"
+InstallDir "$COMMONAPPDATA\Tarazpad\server"
 ShowInstDetails show
 ShowUninstDetails show
 
