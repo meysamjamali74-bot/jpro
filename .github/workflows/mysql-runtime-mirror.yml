@@ -1,0 +1,45 @@
+name: Publish Tarazpad MySQL Runtime Mirror
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [mysql-mirror-stage, main]
+    paths:
+      - '.github/workflows/mysql-runtime-mirror.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TAG: tarazpad-mysql-8.4.11
+      FILE: mysql-8.4.11-winx64.zip
+      URL: https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.11-winx64.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download official MySQL 8.4.11 Windows runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 3 --connect-timeout 30 -A 'Tarazpad-ERP-Runtime-Mirror/1.0' -o "$FILE" "$URL"
+          test $(stat -c%s "$FILE") -gt 100000000
+          unzip -l "$FILE" | grep -q 'mysql-8.4.11-winx64/bin/mysqld.exe'
+          sha256sum "$FILE" | tee SHA256SUMS-mysql-8.4.11.txt
+
+      - name: Publish or update GitHub release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" SHA256SUMS-mysql-8.4.11.txt --clobber
+          else
+            gh release create "$TAG" "$FILE" SHA256SUMS-mysql-8.4.11.txt \
+              --title 'Tarazpad MySQL 8.4.11 Runtime Mirror' \
+              --notes 'Exact MySQL Community Server 8.4.11 Windows x64 ZIP mirrored from Oracle CDN for Tarazpad installer reliability.'
+          fi
