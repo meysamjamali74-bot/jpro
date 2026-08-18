@@ -5,6 +5,10 @@ on:
     paths:
       - 'apps/desktop/**'
       - '.github/workflows/windows-installer.yml'
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - '.github/workflows/windows-installer.yml'
   workflow_dispatch:
 jobs:
   build-windows:
