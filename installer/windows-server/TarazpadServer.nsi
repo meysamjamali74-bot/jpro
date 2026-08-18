@@ -1,6 +1,6 @@
 Unicode True
 RequestExecutionLevel admin
-SetCompressor /SOLID lzma
+SetCompressor zlib
 !include "LogicLib.nsh"
 
 !define APPNAME "Tarazpad ERP Web Server"
@@ -28,7 +28,13 @@ Section "Install Tarazpad ERP Server" SEC_MAIN
   SetShellVarContext all
   SetOutPath "$INSTDIR"
   DetailPrint "Extracting Tarazpad server payload..."
-  File /r "build\staging\*"
+  SetCompress auto
+  File /r /x prereqs "build\staging\*"
+  SetOutPath "$INSTDIR\prereqs"
+  SetCompress off
+  File /r "build\staging\prereqs\*"
+  SetCompress auto
+  SetOutPath "$INSTDIR"
 
   DetailPrint "Detecting prerequisites and configuring server..."
   ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\Install-TarazpadServer.ps1"' $0
