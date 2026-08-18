@@ -9,7 +9,7 @@ SetCompressor zlib
 Name "${APPNAME}"
 Caption "${APPNAME} ${VERSION}"
 OutFile "build\Tarazpad-ERP-Web-Server-Setup-${VERSION}.exe"
-InstallDir "$COMMONAPPDATA\Tarazpad\server"
+InstallDir "$WINDIR\..\ProgramData\Tarazpad\server"
 ShowInstDetails show
 ShowUninstDetails show
 
@@ -19,6 +19,13 @@ VIAddVersionKey "FileDescription" "Tarazpad ERP native Windows web server instal
 VIAddVersionKey "CompanyName" "Tarazpad"
 VIAddVersionKey "FileVersion" "0.2.0"
 VIAddVersionKey "ProductVersion" "0.2.0"
+
+Function .onInit
+  ReadEnvStr $0 "ProgramData"
+  ${If} $0 != ""
+    StrCpy $INSTDIR "$0\Tarazpad\server"
+  ${EndIf}
+FunctionEnd
 
 Page instfiles
 UninstPage uninstConfirm
