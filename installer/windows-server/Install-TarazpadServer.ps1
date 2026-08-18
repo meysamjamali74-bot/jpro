@@ -34,26 +34,51 @@ function New-Secret([int]$length=48) {
 function Test-TcpPort([int]$p) {
   try { $l=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,$p); $l.Start(); $l.Stop(); $true } catch { $false }
 }
+function Test-TcpConnection([string]$host,[int]$port,[int]$timeoutMs=1000) {
+  $client=$null
+  try {
+    $client=New-Object System.Net.Sockets.TcpClient
+    $async=$client.BeginConnect($host,$port,$null,$null)
+    if(-not $async.AsyncWaitHandle.WaitOne($timeoutMs,$false)){ return $false }
+    $client.EndConnect($async)
+    return $client.Connected
+  } catch { return $false } finally { if($client){$client.Close()} }
+}
 function Find-FreePort([int]$start=3307) {
   for($p=$start;$p -le $start+20;$p++){ if(Test-TcpPort $p){ return $p } }
   throw 'No free MySQL TCP port found.'
 }
 function Get-MySqlCandidate {
-  $c=@()
+  # Fast, bounded discovery only. Never recursively scan whole drives.
+  $c=New-Object System.Collections.Generic.List[string]
   $cmd=Get-Command mysql.exe -ErrorAction SilentlyContinue
-  if($cmd){ $c += $cmd.Source }
-  $c += Get-ChildItem 'C:\Program Files\MySQL' -Filter mysql.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-  $c += Get-ChildItem 'C:\mysql*' -Filter mysql.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+  if($cmd){ [void]$c.Add($cmd.Source) }
+  foreach($candidate in @(
+    'C:\Program Files\MySQL\MySQL Server 8.4\bin\mysql.exe',
+    'C:\Program Files\MySQL\MySQL Server 8.4\bin\mysql.exe',
+    'C:\mysql\bin\mysql.exe',
+    'C:\mysql-8.4\bin\mysql.exe'
+  )){ if(Test-Path $candidate){ [void]$c.Add($candidate) } }
+  $mysqlRoot='C:\Program Files\MySQL'
+  if(Test-Path $mysqlRoot){
+    Get-ChildItem $mysqlRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+      $candidate=Join-Path $_.FullName 'bin\mysql.exe'
+      if(Test-Path $candidate){ [void]$c.Add($candidate) }
+    }
+  }
   foreach($mysql in ($c | Where-Object {$_} | Select-Object -Unique)){
     try{
       $v=& $mysql --version 2>$null
       if($v -match 'Ver\s+(\d+)\.(\d+)\.(\d+)'){
-        if([int]$Matches[1] -gt 8 -or ([int]$Matches[1] -eq 8 -and [int]$Matches[2] -ge 4)){
+        # Tarazpad targets the MySQL 8.4 LTS line. Other major lines are kept untouched.
+        if([int]$Matches[1] -eq 8 -and [int]$Matches[2] -eq 4){
           $bin=Split-Path -Parent $mysql
           $base=Split-Path -Parent $bin
           $mysqld=Join-Path $bin 'mysqld.exe'
           $dump=Join-Path $bin 'mysqldump.exe'
-          if(Test-Path $mysqld){ return [pscustomobject]@{ Mysql=$mysql; Mysqld=$mysqld; Dump=$dump; Base=$base; Version="$($Matches[1]).$($Matches[2]).$($Matches[3])"; Source='system' } }
+          if((Test-Path $mysqld) -and (Test-Path $dump)){
+            return [pscustomobject]@{ Mysql=$mysql; Mysqld=$mysqld; Dump=$dump; Base=$base; Version="$($Matches[1]).$($Matches[2]).$($Matches[3])"; Source='system' }
+          }
         }
       }
     }catch{}
@@ -90,8 +115,14 @@ function Expand-BundledMySql {
   New-Item $MySqlRuntimeLocal -ItemType Directory -Force | Out-Null
   $tmp=Join-Path $env:TEMP ('tarazpad-mysql-'+[guid]::NewGuid())
   New-Item $tmp -ItemType Directory -Force | Out-Null
-  Step 'Extracting bundled MySQL 8.4.11 because no compatible MySQL 8.4+ was found...'
-  Expand-Archive $zip -DestinationPath $tmp -Force
+  Step 'Extracting bundled MySQL 8.4.11 because no compatible MySQL 8.4 installation was found...'
+  $tar=Get-Command tar.exe -ErrorAction SilentlyContinue
+  if($tar){
+    & $tar.Source -xf $zip -C $tmp
+    if($LASTEXITCODE -ne 0){ throw "MySQL archive extraction failed: $LASTEXITCODE" }
+  } else {
+    Expand-Archive $zip -DestinationPath $tmp -Force
+  }
   $top=Get-ChildItem $tmp -Directory | Select-Object -First 1
   if(!$top){ throw 'Bundled MySQL archive structure is invalid.' }
   Copy-Item (Join-Path $top.FullName '*') $MySqlRuntimeLocal -Recurse -Force
@@ -123,9 +154,9 @@ host=127.0.0.1
 default-character-set=utf8mb4
 "@ | Set-Content $MyIni -Encoding ascii
 }
-function Wait-MySql($mysql,[int]$dbPort,[int]$seconds=60){
+function Wait-MySql([int]$dbPort,[int]$seconds=60){
   for($i=0;$i -lt $seconds;$i++){
-    try{ & $mysql.Mysql --protocol=tcp -h127.0.0.1 -P$dbPort -uroot -e 'SELECT 1' 2>$null | Out-Null; return $true }catch{}
+    if(Test-TcpConnection '127.0.0.1' $dbPort 1000){ return $true }
     Start-Sleep 1
   }
   return $false
@@ -142,7 +173,7 @@ function Ensure-MySql {
   }
 
   $mysql=Get-MySqlCandidate
-  if($mysql){ Ok "Compatible MySQL $($mysql.Version) already installed; reusing binaries and skipping MySQL installation." }
+  if($mysql){ Ok "Compatible MySQL $($mysql.Version) already installed; reusing its binaries and skipping MySQL installation." }
   else { $mysql=Expand-BundledMySql }
 
   New-Item $MySqlData -ItemType Directory -Force | Out-Null
@@ -153,14 +184,15 @@ function Ensure-MySql {
     Step 'Initializing dedicated Tarazpad MySQL data directory...'
     & $mysql.Mysqld --defaults-file="$MyIni" --initialize-insecure
     if($LASTEXITCODE -ne 0){ throw "MySQL initialization failed: $LASTEXITCODE" }
-  }
+  } else { Ok 'Tarazpad MySQL data directory already initialized; skipped.' }
   if(!(Get-Service $ServiceName -ErrorAction SilentlyContinue)){
     & $mysql.Mysqld --install $ServiceName --defaults-file="$MyIni"
     if($LASTEXITCODE -ne 0){ throw "MySQL service registration failed: $LASTEXITCODE" }
   } else { Ok 'TarazpadMySQL Windows service already exists; registration skipped.' }
-  Start-Service $ServiceName
-  (Get-Service $ServiceName).WaitForStatus('Running','00:00:30')
-  if(!(Wait-MySql $mysql $dbPort 60)){ throw 'Tarazpad MySQL did not become ready.' }
+  $svc=Get-Service $ServiceName
+  if($svc.Status -ne 'Running'){ Start-Service $ServiceName; $svc.WaitForStatus('Running','00:00:30') }
+  if(!(Wait-MySql $dbPort 60)){ throw 'Tarazpad MySQL did not become ready.' }
+  Ok "Tarazpad MySQL is listening on local port $dbPort."
 
   $rootSecret=New-Secret 48
   $appSecret=New-Secret 48
@@ -177,9 +209,11 @@ FLUSH PRIVILEGES;
 "@
   $tempSql=Join-Path $env:TEMP ('tarazpad-init-'+[guid]::NewGuid()+'.sql')
   $sql | Set-Content $tempSql -Encoding utf8
-  Get-Content $tempSql | & $mysql.Mysql --protocol=tcp -h127.0.0.1 -P$dbPort -uroot
+  Get-Content $tempSql | & $mysql.Mysql --protocol=tcp --host=127.0.0.1 --port=$dbPort --user=root
+  $mysqlExit=$LASTEXITCODE
   Remove-Item $tempSql -Force
   Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
+  if($mysqlExit -ne 0){ throw "Tarazpad MySQL security/database bootstrap failed: $mysqlExit" }
   return [pscustomobject]@{ Mysql=$mysql.Mysql; Mysqld=$mysql.Mysqld; Dump=$mysql.Dump; Base=$mysql.Base; Version=$mysql.Version; Source=$mysql.Source; Port=$dbPort; RootSecret=$rootSecret; AppSecret=$appSecret; JwtSecret=$jwtSecret; AdminSecret=$adminSecret }
 }
 
@@ -302,7 +336,9 @@ Configuration secrets are stored under $ConfigRoot with Administrator/SYSTEM ACL
 try{
   $shell=New-Object -ComObject WScript.Shell
   $shortcut=$shell.CreateShortcut([Environment]::GetFolderPath('CommonDesktopDirectory')+'\Tarazpad ERP.lnk')
-  $shortcut.TargetPath='http://localhost:8080'
+  $shortcut.TargetPath=(Join-Path $env:WINDIR 'explorer.exe')
+  $shortcut.Arguments="http://localhost:$Port"
+  $shortcut.WorkingDirectory=$Root
   $shortcut.Save()
 }catch{}
 
@@ -315,4 +351,4 @@ Write-Host " Initial login file: $cred"
 Write-Host " Daily backups: $BackupRoot"
 Write-Host ' Existing compatible prerequisites were reused and NOT reinstalled.'
 Write-Host "============================================================`n" -ForegroundColor Green
-Start-Process "http://localhost:$Port"
+if($env:GITHUB_ACTIONS -ne 'true'){ Start-Process "http://localhost:$Port" }
