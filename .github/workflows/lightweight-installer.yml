@@ -28,6 +28,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $null=[scriptblock]::Create((Get-Content 'installer/lightweight/Install-TarazpadOnline.ps1' -Raw))
+          $null=[scriptblock]::Create((Get-Content 'installer/lightweight/Run-TarazpadOnline.ps1' -Raw))
           Write-Host 'PowerShell syntax OK.'
 
       - name: Install NSIS
@@ -56,7 +57,7 @@ jobs:
           TARAZPAD_SKIP_BROWSER: '1'
         run: |
           $ErrorActionPreference='Stop'
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\installer\lightweight\Install-TarazpadOnline.ps1'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\installer\lightweight\Run-TarazpadOnline.ps1'
           if($LASTEXITCODE -ne 0){throw "First installer run failed: $LASTEXITCODE"}
           $h=Invoke-RestMethod 'http://127.0.0.1:8080/api/health' -TimeoutSec 10
           if(!$h.ok){throw 'Tarazpad health check failed.'}
