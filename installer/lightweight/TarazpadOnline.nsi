@@ -4,7 +4,7 @@ SetCompressor /SOLID lzma
 !include "LogicLib.nsh"
 
 !define APPNAME "Tarazpad ERP Web Installer"
-!define VERSION "0.3.0"
+!define VERSION "0.3.1"
 
 Name "${APPNAME}"
 Caption "${APPNAME} ${VERSION}"
@@ -12,12 +12,12 @@ OutFile "build\Tarazpad-ERP-Web-Setup-Light-${VERSION}.exe"
 InstallDir "$PROGRAMFILES64\Tarazpad\Bootstrap"
 ShowInstDetails show
 
-VIProductVersion "0.3.0.0"
+VIProductVersion "0.3.1.0"
 VIAddVersionKey "ProductName" "Tarazpad ERP Web Installer"
 VIAddVersionKey "FileDescription" "Lightweight prerequisite-aware Tarazpad ERP web installer"
 VIAddVersionKey "CompanyName" "Tarazpad"
-VIAddVersionKey "FileVersion" "0.3.0"
-VIAddVersionKey "ProductVersion" "0.3.0"
+VIAddVersionKey "FileVersion" "0.3.1"
+VIAddVersionKey "ProductVersion" "0.3.1"
 
 Page instfiles
 
