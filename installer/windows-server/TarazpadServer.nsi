@@ -39,8 +39,12 @@ Section "Install Tarazpad ERP Server" SEC_MAIN
   DetailPrint "Detecting prerequisites and configuring server..."
   ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\Install-TarazpadServer.ps1"' $0
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP|MB_OK "Tarazpad setup stopped with error code $0.$\r$\nSee C:\ProgramData\Tarazpad\server\logs for details."
-    Abort
+    IfSilent silent_install_error interactive_install_error
+    interactive_install_error:
+      MessageBox MB_ICONSTOP|MB_OK "Tarazpad setup stopped with error code $0.$\r$\nSee C:\ProgramData\Tarazpad\server\logs for details."
+    silent_install_error:
+      SetErrorLevel $0
+      Quit
   ${EndIf}
 
   WriteUninstaller "$INSTDIR\Uninstall-TarazpadServer.exe"
