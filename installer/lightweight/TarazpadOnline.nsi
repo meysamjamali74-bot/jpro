@@ -1,6 +1,7 @@
 Unicode True
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
+!include "LogicLib.nsh"
 
 !define APPNAME "Tarazpad ERP Web Installer"
 !define VERSION "0.3.0"
