@@ -1,0 +1,106 @@
+name: Tarazpad Native Windows Server Installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'database/**'
+      - 'installer/windows-server/**'
+      - '.github/workflows/windows-server-installer.yml'
+
+jobs:
+  build-native-server-installer:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install production API dependencies
+        working-directory: apps/api
+        shell: powershell
+        run: npm install --omit=dev
+
+      - name: Prepare offline staging payload
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $stage='installer/windows-server/build/staging'
+          Remove-Item 'installer/windows-server/build' -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item "$stage/app/apps/api","$stage/app/apps/web","$stage/app/database","$stage/runtime","$stage/prereqs" -ItemType Directory -Force | Out-Null
+          Copy-Item 'apps/api/*' "$stage/app/apps/api" -Recurse -Force
+          Copy-Item 'apps/web/*' "$stage/app/apps/web" -Recurse -Force
+          Copy-Item 'database/*' "$stage/app/database" -Recurse -Force
+          Copy-Item 'installer/windows-server/Install-TarazpadServer.ps1' "$stage/Install-TarazpadServer.ps1" -Force
+          Copy-Item (Get-Command node.exe).Source "$stage/runtime/node.exe" -Force
+          "Tarazpad native web server payload $(Get-Date -Format o)" | Set-Content "$stage/BUILD-INFO.txt"
+
+      - name: Bundle MySQL 8.4.11 only for machines that need it
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out='installer/windows-server/build/staging/prereqs/mysql-8.4.11-winx64.zip'
+          $urls=@(
+            'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.11-winx64.zip',
+            'https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-8.4.11-winx64.zip'
+          )
+          $ok=$false
+          foreach($url in $urls){
+            try{
+              Write-Host "Downloading $url"
+              curl.exe -L --fail --retry 4 --retry-delay 5 -A 'Mozilla/5.0 Tarazpad-Build' -o $out $url
+              if((Test-Path $out) -and (Get-Item $out).Length -gt 100MB){$ok=$true;break}
+            }catch{ Write-Warning $_ }
+          }
+          if(!$ok){throw 'Unable to obtain official MySQL 8.4.11 Windows ZIP.'}
+          7z t $out | Out-Host
+          if($LASTEXITCODE -ne 0){throw 'MySQL archive integrity test failed.'}
+
+      - name: Bundle Visual C++ runtime only for machines that need it
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out='installer/windows-server/build/staging/prereqs/vc_redist.x64.exe'
+          curl.exe -L --fail --retry 4 --retry-delay 3 -o $out 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+          if(!(Test-Path $out) -or (Get-Item $out).Length -lt 5MB){throw 'VC++ runtime download failed.'}
+
+      - name: Static installer checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Install-TarazpadServer.ps1' -Raw))
+          node --check apps/api/src/server.js
+          node --check apps/api/src/db.js
+          node --check apps/web/app.js
+          npm --prefix apps/api test
+          Test-Path 'installer/windows-server/build/staging/app/apps/api/node_modules/mysql2' | Should -BeTrue
+
+      - name: Install NSIS build tool
+        shell: powershell
+        run: choco install nsis -y --no-progress
+
+      - name: Build native offline Setup EXE
+        working-directory: installer/windows-server
+        shell: powershell
+        run: |
+          $makensis=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if(!$makensis){$makensis='C:\Program Files (x86)\NSIS\makensis.exe'}
+          & $makensis 'TarazpadServer.nsi'
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $exe='build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe'
+          if(!(Test-Path $exe)){throw 'Setup EXE not produced.'}
+          Get-FileHash $exe -Algorithm SHA256 | Format-List | Out-File 'build/SHA256SUMS.txt'
+
+      - name: Upload native Windows web server setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-ERP-Native-Web-Server-Setup
+          path: |
+            installer/windows-server/build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe
+            installer/windows-server/build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
