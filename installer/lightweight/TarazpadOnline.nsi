@@ -29,9 +29,15 @@ Section "Install Tarazpad ERP" SEC_MAIN
   DetailPrint "Checking installed prerequisites and installing Tarazpad..."
   ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\Run-TarazpadOnline.ps1"' $0
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP|MB_OK "Tarazpad installation failed with error code $0.$\r$\nSee C:\ProgramData\Tarazpad\server\logs for the installer log."
-    SetErrorLevel $0
-    Quit
+    IfSilent silent_fail interactive_fail
+    interactive_fail:
+      MessageBox MB_ICONSTOP|MB_OK "Tarazpad installation failed with error code $0.$\r$\nSee C:\ProgramData\Tarazpad\server\logs for the installer log."
+    silent_fail:
+      SetErrorLevel $0
+      Quit
   ${EndIf}
-  MessageBox MB_ICONINFORMATION|MB_OK "Tarazpad ERP is ready.$\r$\nOpen http://localhost:8080 or use the desktop shortcut."
+  IfSilent silent_done interactive_done
+  interactive_done:
+    MessageBox MB_ICONINFORMATION|MB_OK "Tarazpad ERP is ready.$\r$\nOpen http://localhost:8080 or use the desktop shortcut."
+  silent_done:
 SectionEnd
