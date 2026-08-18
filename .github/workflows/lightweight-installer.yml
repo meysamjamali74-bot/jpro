@@ -1,0 +1,96 @@
+name: Tarazpad Lightweight Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'installer/lightweight/**'
+      - '.github/workflows/lightweight-installer.yml'
+  pull_request:
+    paths:
+      - 'installer/lightweight/**'
+      - '.github/workflows/lightweight-installer.yml'
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Static PowerShell validation
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $null=[scriptblock]::Create((Get-Content 'installer/lightweight/Install-TarazpadOnline.ps1' -Raw))
+          Write-Host 'PowerShell syntax OK.'
+
+      - name: Install NSIS
+        shell: powershell
+        run: choco install nsis -y --no-progress
+
+      - name: Build lightweight Setup
+        working-directory: installer/lightweight
+        shell: powershell
+        run: |
+          New-Item build -ItemType Directory -Force | Out-Null
+          $makensis=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if(!$makensis){$makensis='C:\Program Files (x86)\NSIS\makensis.exe'}
+          & $makensis 'TarazpadOnline.nsi'
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $exe='build/Tarazpad-ERP-Web-Setup-Light-0.3.0.exe'
+          if(!(Test-Path $exe)){throw 'Lightweight Setup EXE not produced.'}
+          $size=(Get-Item $exe).Length
+          Write-Host "Installer size: $size bytes"
+          if($size -gt 5MB){throw 'Bootstrap installer unexpectedly exceeds 5 MB.'}
+          Get-FileHash $exe -Algorithm SHA256 | Format-List | Out-File 'build/SHA256SUMS.txt'
+
+      - name: Full install test - first run
+        shell: powershell
+        env:
+          TARAZPAD_SKIP_BROWSER: '1'
+        run: |
+          $ErrorActionPreference='Stop'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\installer\lightweight\Install-TarazpadOnline.ps1'
+          if($LASTEXITCODE -ne 0){throw "First installer run failed: $LASTEXITCODE"}
+          $h=Invoke-RestMethod 'http://127.0.0.1:8080/api/health' -TimeoutSec 10
+          if(!$h.ok){throw 'Tarazpad health check failed.'}
+          $cfg=Get-Content 'C:\ProgramData\Tarazpad\server\config\server.json' -Raw | ConvertFrom-Json
+          $snapshot=[ordered]@{installedAt=$cfg.installedAt;mysqlPassword=$cfg.mysqlPassword;jwtSecret=$cfg.jwtSecret;adminPassword=$cfg.adminPassword;mysqlVersion=$cfg.mysqlVersion;mysqlSource=$cfg.mysqlSource;nodeSource=$cfg.nodeSource}
+          $snapshot | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP\tarazpad-before.json"
+          if(!(Test-Path 'C:\ProgramData\Tarazpad\server\INITIAL-LOGIN.txt')){throw 'Initial login file missing.'}
+          Write-Host "First run OK: MySQL $($cfg.mysqlVersion) source=$($cfg.mysqlSource); Node source=$($cfg.nodeSource)"
+
+      - name: Idempotency test - packaged EXE second run
+        shell: powershell
+        env:
+          TARAZPAD_SKIP_BROWSER: '1'
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=(Resolve-Path 'installer/lightweight/build/Tarazpad-ERP-Web-Setup-Light-0.3.0.exe').Path
+          $p=Start-Process $exe -ArgumentList '/S' -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "Second installer run failed: $($p.ExitCode)"}
+          $before=Get-Content "$env:RUNNER_TEMP\tarazpad-before.json" -Raw | ConvertFrom-Json
+          $after=Get-Content 'C:\ProgramData\Tarazpad\server\config\server.json' -Raw | ConvertFrom-Json
+          if($before.installedAt -ne $after.installedAt){throw 'Existing installation timestamp changed.'}
+          if($before.mysqlPassword -ne $after.mysqlPassword){throw 'Database password changed on reinstall.'}
+          if($before.jwtSecret -ne $after.jwtSecret){throw 'JWT secret changed on reinstall.'}
+          if($before.adminPassword -ne $after.adminPassword){throw 'Initial admin password changed on reinstall.'}
+          $h=Invoke-RestMethod 'http://127.0.0.1:8080/api/health' -TimeoutSec 10
+          if(!$h.ok){throw 'Health failed after second install.'}
+          Write-Host 'PASS: compatible prerequisites were reused and existing Tarazpad data/configuration were preserved.'
+
+      - name: Upload lightweight installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-ERP-Web-Setup-Light-0.3.0
+          path: |
+            installer/lightweight/build/Tarazpad-ERP-Web-Setup-Light-0.3.0.exe
+            installer/lightweight/build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
