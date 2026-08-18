@@ -35,8 +35,10 @@ jobs:
           node --check apps/api/src/enterprise.js
           node --check apps/api/src/iran.js
           node --check apps/api/src/iran_extensions.js
+          node --check apps/api/src/purchase_iran.js
           node --check apps/web/app.js
           node --check apps/web/app-v2.js
+          node --check apps/web/fa-overlay.js
           npm --prefix apps/api test
       - name: MySQL integration and Iran accounting flow
         env:
@@ -72,10 +74,9 @@ jobs:
           IR_PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/products -H "$AUTH" -H 'content-type: application/json' -d '{"sku":"IR-001","name":"کالای مشمول رسمی","productType":"GOODS","unit":"عدد","goodsServiceId":"1234567890123","unitCode":"1627","vatStatus":"STANDARD","defaultVatRate":10,"purchasePrice":70000,"salePrice":100000}' | jq -r .id)
 
           IR_INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/sales-invoices -H "$AUTH" -H 'content-type: application/json' -d "{\"customerPartyId\":$IR_CUSTOMER,\"invoiceDate\":\"2026-08-19\",\"dueDate\":\"2026-09-18\",\"invoiceClassification\":\"OFFICIAL\",\"taxInvoiceType\":\"TYPE_1\",\"settlementType\":\"CREDIT\",\"lines\":[{\"productId\":$IR_PRODUCT,\"qty\":2,\"unitPrice\":100000,\"discountAmount\":0}]}" | jq -r .id)
-          test -n "$IR_INVOICE" && test "$IR_INVOICE" != "null"
           curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/validate" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.valid == true and .totals.gross == 200000 and .totals.tax == 20000 and .totals.net == 220000'
           curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/post" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.ok == true and .debit == 220000 and .credit == 220000'
-          curl -fsS --get 'http://127.0.0.1:8080/api/iran/sales-invoices' -H "$AUTH" --data-urlencode 'classification=OFFICIAL' --data-urlencode 'q=خریدار' | jq -e 'map(select(.invoice_classification=="OFFICIAL" and .tax_total==20000)) | length == 1'
+          curl -fsS --get 'http://127.0.0.1:8080/api/iran/sales-invoices' -H "$AUTH" --data-urlencode 'classification=OFFICIAL' --data-urlencode 'q=خریدار' --data-urlencode 'page=1' --data-urlencode 'pageSize=25' | jq -e '.rows | map(select(.invoice_classification=="OFFICIAL" and .tax_total==20000)) | length == 1'
 
           curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="110100" and .debit==420000)) | length == 1'
           curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="410100" and .credit==400000)) | length == 1'
