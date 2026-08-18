@@ -3,6 +3,7 @@ import { requireRole } from './auth.js';
 import { registerPurchaseIranRoutes } from './purchase_iran.js';
 import { registerPurchaseContextRoutes } from './purchase_context.js';
 import { registerPayrollIranRoutes } from './payroll_iran.js';
+import { registerPayrollExtraRoutes } from './payroll_extra.js';
 
 const n=v=>Number(v||0),text=v=>String(v??'').trim();
 const fail=(message,status=400,details=null)=>{const e=new Error(message);e.status=status;e.details=details;throw e};
@@ -12,6 +13,7 @@ async function nextNo(conn,companyId,type,prefix){const lock=`tarazpad:extseq:${
 
 export function registerIranExtensionRoutes(app){
  registerPayrollIranRoutes(app);
+ registerPayrollExtraRoutes(app);
  registerPurchaseContextRoutes(app);
  registerPurchaseIranRoutes(app);
  app.get('/api/iran/products',wrap(async(req,res)=>{const q=`%${text(req.query.q)}%`,vat=text(req.query.vatStatus),type=text(req.query.productType),active=text(req.query.active);const [rows]=await pool.execute(`SELECT p.*,COALESCE(SUM(ib.on_hand_qty),0) on_hand_qty,COALESCE(SUM(ib.reserved_qty),0) reserved_qty,COALESCE(SUM(ib.quarantine_qty),0) quarantine_qty FROM products p LEFT JOIN inventory_balances ib ON ib.product_id=p.id AND ib.company_id=p.company_id WHERE p.company_id=? AND p.is_deleted=0 AND (?='%%' OR p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR p.goods_service_id LIKE ?) AND (?='' OR p.vat_status=?) AND (?='' OR p.product_type=?) AND (?='' OR p.is_active=?) GROUP BY p.id ORDER BY p.id DESC LIMIT 500`,[req.user.companyId,q,q,q,q,q,vat,vat,type,type,active,active]);res.json(rows)}));
