@@ -1,6 +1,7 @@
 name: Tarazpad Web Release
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches: [main]
     paths:
@@ -26,17 +27,14 @@ jobs:
         options: >-
           --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_web_release_2026 --silent"
           --health-interval=5s --health-timeout=5s --health-retries=30
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
       - name: Install dependencies
         working-directory: apps/api
         run: npm install
-
       - name: Static and unit checks
         run: |
           npm run check
@@ -47,7 +45,6 @@ jobs:
           test -s apps/web/assets/tarazpad-brand.webp
           grep -q 'ترازپاد' apps/web/index.html
           grep -q 'dashboard' apps/web/app.js
-
       - name: Start API with MySQL
         env:
           PORT: 8080
@@ -66,14 +63,12 @@ jobs:
           for i in {1..45}; do curl -fsS http://127.0.0.1:8080/api/health && exit 0 || sleep 2; done
           cat /tmp/tarazpad-web.log
           exit 1
-
       - name: Security and web smoke tests
         run: |
           curl -fsS http://127.0.0.1:8080/ | grep -q 'ترازپاد'
           curl -fsSI http://127.0.0.1:8080/ | grep -qi 'x-content-type-options: nosniff'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/me)" = "401"
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"wrong"}')" = "401"
-
       - name: End-to-end financial and persistence test
         env:
           PORT: 8080
@@ -89,20 +84,16 @@ jobs:
         run: |
           TOKEN=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"Strong_Web_Release_2026!"}' | jq -r .token)
           test -n "$TOKEN" && test "$TOKEN" != "null"
-
           CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/parties -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"name":"مشتری تست انتشار وب","partyType":"LEGAL","roles":["CUSTOMER"]}' | jq -r .id)
           PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/products -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"sku":"WEB-REL-001","name":"کالای تست انتشار","unit":"عدد","salePrice":250000}' | jq -r .id)
           INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/sales/invoices -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"lines\":[{\"productId\":$PRODUCT,\"qty\":4,\"unitPrice\":250000}]}" | jq -r .id)
           curl -fsS -X POST "http://127.0.0.1:8080/api/sales/invoices/$INVOICE/post" -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' | jq -e '.ok == true'
-
           curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "authorization: Bearer $TOKEN" > /tmp/tb.json
           jq -e '([.[].debit]|add) == ([.[].credit]|add)' /tmp/tb.json
           jq -e 'map(select(.code=="110100" and .debit==1000000)) | length == 1' /tmp/tb.json
-
           curl -fsS -X PUT http://127.0.0.1:8080/api/preferences -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"accent":"#22D3EE","font":"Vazirmatn"}' | jq -e '.ok == true'
           curl -fsS -X PUT http://127.0.0.1:8080/api/dashboard/layout -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '[{"id":"sales_month","x":0,"y":0}]' | jq -e '.ok == true'
           curl -fsS http://127.0.0.1:8080/api/dashboard/layout -H "authorization: Bearer $TOKEN" | jq -e '.[0].id == "sales_month"'
-
           kill $(cat /tmp/tarazpad.pid)
           sleep 2
           node apps/api/src/server.js > /tmp/tarazpad-web-restart.log 2>&1 &
@@ -112,10 +103,8 @@ jobs:
           curl -fsS http://127.0.0.1:8080/api/sales/invoices -H "authorization: Bearer $TOKEN2" | jq -e "map(select(.id==$INVOICE and .net_total==1000000)) | length == 1"
           curl -fsS http://127.0.0.1:8080/api/dashboard/layout -H "authorization: Bearer $TOKEN2" | jq -e '.[0].id == "sales_month"'
           kill $(cat /tmp/tarazpad.pid)
-
       - name: Docker image build test
         run: docker build -t tarazpad-web:${{ github.sha }} .
-
       - name: Create production web package
         run: |
           mkdir -p release/Tarazpad-ERP-Web
@@ -134,7 +123,6 @@ jobs:
           cd release
           zip -qr Tarazpad-ERP-Web-Release.zip Tarazpad-ERP-Web
           sha256sum Tarazpad-ERP-Web-Release.zip > SHA256SUMS.txt
-
       - name: Upload web release
         uses: actions/upload-artifact@v4
         with:
@@ -144,7 +132,6 @@ jobs:
             release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90
-
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
