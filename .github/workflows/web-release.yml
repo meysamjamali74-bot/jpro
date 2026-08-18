@@ -1,0 +1,153 @@
+name: Tarazpad Web Release
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'apps/api/**'
+      - 'database/**'
+      - 'docker-compose.yml'
+      - 'Dockerfile'
+      - '.github/workflows/web-release.yml'
+
+jobs:
+  validate-package:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_web_release_2026
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: web_release_db_2026
+        ports: [3306:3306]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_web_release_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: npm install
+
+      - name: Static and unit checks
+        run: |
+          npm run check
+          npm test
+          test -s apps/web/index.html
+          test -s apps/web/app.js
+          test -s apps/web/styles.css
+          test -s apps/web/assets/tarazpad-brand.webp
+          grep -q 'ترازپاد' apps/web/index.html
+          grep -q 'dashboard' apps/web/app.js
+
+      - name: Start API with MySQL
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: web_release_db_2026
+          JWT_SECRET: tarazpad_web_release_integration_secret_2026_long_enough
+          TARAZPAD_ADMIN_EMAIL: admin@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Web_Release_2026!
+          TARAZPAD_ADMIN_NAME: Web Release Admin
+        run: |
+          node apps/api/src/server.js > /tmp/tarazpad-web.log 2>&1 &
+          echo $! > /tmp/tarazpad.pid
+          for i in {1..45}; do curl -fsS http://127.0.0.1:8080/api/health && exit 0 || sleep 2; done
+          cat /tmp/tarazpad-web.log
+          exit 1
+
+      - name: Security and web smoke tests
+        run: |
+          curl -fsS http://127.0.0.1:8080/ | grep -q 'ترازپاد'
+          curl -fsSI http://127.0.0.1:8080/ | grep -qi 'x-content-type-options: nosniff'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/me)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"wrong"}')" = "401"
+
+      - name: End-to-end financial and persistence test
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: web_release_db_2026
+          JWT_SECRET: tarazpad_web_release_integration_secret_2026_long_enough
+          TARAZPAD_ADMIN_EMAIL: admin@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Web_Release_2026!
+          TARAZPAD_ADMIN_NAME: Web Release Admin
+        run: |
+          TOKEN=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"Strong_Web_Release_2026!"}' | jq -r .token)
+          test -n "$TOKEN" && test "$TOKEN" != "null"
+
+          CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/parties -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"name":"مشتری تست انتشار وب","partyType":"LEGAL","roles":["CUSTOMER"]}' | jq -r .id)
+          PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/products -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"sku":"WEB-REL-001","name":"کالای تست انتشار","unit":"عدد","salePrice":250000}' | jq -r .id)
+          INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/sales/invoices -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"lines\":[{\"productId\":$PRODUCT,\"qty\":4,\"unitPrice\":250000}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/sales/invoices/$INVOICE/post" -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' | jq -e '.ok == true'
+
+          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "authorization: Bearer $TOKEN" > /tmp/tb.json
+          jq -e '([.[].debit]|add) == ([.[].credit]|add)' /tmp/tb.json
+          jq -e 'map(select(.code=="110100" and .debit==1000000)) | length == 1' /tmp/tb.json
+
+          curl -fsS -X PUT http://127.0.0.1:8080/api/preferences -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"accent":"#22D3EE","font":"Vazirmatn"}' | jq -e '.ok == true'
+          curl -fsS -X PUT http://127.0.0.1:8080/api/dashboard/layout -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '[{"id":"sales_month","x":0,"y":0}]' | jq -e '.ok == true'
+          curl -fsS http://127.0.0.1:8080/api/dashboard/layout -H "authorization: Bearer $TOKEN" | jq -e '.[0].id == "sales_month"'
+
+          kill $(cat /tmp/tarazpad.pid)
+          sleep 2
+          node apps/api/src/server.js > /tmp/tarazpad-web-restart.log 2>&1 &
+          echo $! > /tmp/tarazpad.pid
+          for i in {1..30}; do curl -fsS http://127.0.0.1:8080/api/health && break || sleep 2; done
+          TOKEN2=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"Strong_Web_Release_2026!"}' | jq -r .token)
+          curl -fsS http://127.0.0.1:8080/api/sales/invoices -H "authorization: Bearer $TOKEN2" | jq -e "map(select(.id==$INVOICE and .net_total==1000000)) | length == 1"
+          curl -fsS http://127.0.0.1:8080/api/dashboard/layout -H "authorization: Bearer $TOKEN2" | jq -e '.[0].id == "sales_month"'
+          kill $(cat /tmp/tarazpad.pid)
+
+      - name: Docker image build test
+        run: docker build -t tarazpad-web:${{ github.sha }} .
+
+      - name: Create production web package
+        run: |
+          mkdir -p release/Tarazpad-ERP-Web
+          cp -R apps release/Tarazpad-ERP-Web/
+          cp -R database release/Tarazpad-ERP-Web/
+          cp Dockerfile docker-compose.yml package.json README.md .env.example release/Tarazpad-ERP-Web/
+          cat > release/Tarazpad-ERP-Web/WEB-RELEASE.txt <<'EOF'
+          Tarazpad ERP Web Release
+          ------------------------
+          Database: MySQL 8.4 / InnoDB
+          Runtime: Node.js 22+
+          Quick start: copy .env.example to .env, replace every secret, then run: docker compose up -d --build
+          URL: http://localhost:8080
+          This release is the tested web build of the currently implemented Tarazpad foundation; it is not the full Enterprise 1.0 scope.
+          EOF
+          cd release
+          zip -qr Tarazpad-ERP-Web-Release.zip Tarazpad-ERP-Web
+          sha256sum Tarazpad-ERP-Web-Release.zip > SHA256SUMS.txt
+
+      - name: Upload web release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-ERP-Web-Release
+          path: |
+            release/Tarazpad-ERP-Web-Release.zip
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-Web-Release-Failure-Logs
+          path: /tmp/tarazpad-web*.log
