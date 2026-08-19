@@ -5,6 +5,9 @@ import { registerPurchaseContextRoutes } from './purchase_context.js';
 import { registerPayrollIranRoutes } from './payroll_iran.js';
 import { registerPayrollExtraRoutes } from './payroll_extra.js';
 import { registerTreasuryV2Routes } from './treasury_v2.js';
+import { registerSalesCostingV2Routes } from './sales_costing_v2.js';
+import { registerDistributionV2Routes } from './distribution_v2.js';
+import { registerCommissionV2Routes } from './commission_v2.js';
 
 const n=v=>Number(v||0),text=v=>String(v??'').trim();
 const fail=(message,status=400,details=null)=>{const e=new Error(message);e.status=status;e.details=details;throw e};
@@ -14,6 +17,9 @@ async function nextNo(conn,companyId,type,prefix){const lock=`tarazpad:extseq:${
 
 export function registerIranExtensionRoutes(app){
  registerTreasuryV2Routes(app);
+ registerSalesCostingV2Routes(app);
+ registerDistributionV2Routes(app);
+ registerCommissionV2Routes(app);
  registerPayrollIranRoutes(app);
  registerPayrollExtraRoutes(app);
  registerPurchaseContextRoutes(app);
@@ -33,7 +39,7 @@ export function registerIranExtensionRoutes(app){
    if(dateTo){where.push('si.invoice_date<=?');params.push(dateTo)}
    const whereSql=where.join(' AND ');
    const [[cnt]]=await pool.execute(`SELECT COUNT(*) total FROM sales_invoices si JOIN parties p ON p.id=si.customer_party_id WHERE ${whereSql}`,params);
-   const [rows]=await pool.execute(`SELECT si.id,si.invoice_no,si.invoice_date,si.due_date,si.customer_party_id,p.name customer,p.economic_code customer_economic_code,si.invoice_classification,si.tax_invoice_type,si.settlement_type,si.tax_status,si.status,si.gross_total,si.discount_total,si.tax_total,si.net_total,si.outstanding_amount,si.tax_unique_no FROM sales_invoices si JOIN parties p ON p.id=si.customer_party_id WHERE ${whereSql} ORDER BY si.invoice_date DESC,si.id DESC LIMIT ${pageSize} OFFSET ${offset}`,params);
+   const [rows]=await pool.execute(`SELECT si.id,si.invoice_no,si.invoice_date,si.due_date,si.customer_party_id,p.name customer,p.economic_code customer_economic_code,si.invoice_classification,si.tax_invoice_type,si.settlement_type,si.tax_status,si.status,si.gross_total,si.discount_total,si.tax_total,si.net_total,si.outstanding_amount,si.tax_unique_no,si.salesperson_user_id,si.route_id FROM sales_invoices si JOIN parties p ON p.id=si.customer_party_id WHERE ${whereSql} ORDER BY si.invoice_date DESC,si.id DESC LIMIT ${pageSize} OFFSET ${offset}`,params);
    res.json({rows,total:n(cnt.total),page,pageSize});
  }));
 
