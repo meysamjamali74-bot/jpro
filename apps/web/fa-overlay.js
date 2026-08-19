@@ -37,4 +37,4 @@ function translate(root=document){
  });
 }
 let scheduled=false;const obs=new MutationObserver(()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;translate()})});obs.observe(document.documentElement,{childList:true,subtree:true,characterData:false});translate();
-})();
+load('/phase17-ui.js');})();

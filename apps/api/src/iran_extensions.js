@@ -1,3 +1,7 @@
+import { registerYearEndCalculateOverrideV7 } from './year_end_calculate_override_v7.js';
+import { registerYearEndV7Routes } from './year_end_v7.js';
+import { registerStatementDesignerV7Routes } from './statement_designer_v7.js';
+import { registerComplianceV7Routes } from './compliance_v7.js';
 import { registerFinanceReportingOverridesV6 } from './finance_reporting_overrides_v6.js';
 import { registerFinanceReportingV6Routes } from './finance_reporting_v6.js';
 import { fieldPolicyMiddleware } from './field_policy_middleware.js';
@@ -40,6 +44,13 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 
 export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
+
+
+  // Enterprise 1.7: year-end, financial statement designer and statutory compliance.
+  registerYearEndCalculateOverrideV7(app);
+  registerYearEndV7Routes(app);
+  registerStatementDesignerV7Routes(app);
+  registerComplianceV7Routes(app);
 
   // Financial reporting overrides precede the underlying reporting routes.
   registerFinanceReportingOverridesV6(app);
