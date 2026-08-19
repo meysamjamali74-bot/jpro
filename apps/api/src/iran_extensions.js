@@ -1,3 +1,10 @@
+import { fieldPolicyMiddleware } from './field_policy_middleware.js';
+import { registerBiV5Routes } from './bi_v5.js';
+import { registerFxV5Routes } from './fx_v5.js';
+import { registerSecurityV5Routes } from './security_v5.js';
+import { registerMaintenanceV5Routes } from './maintenance_v5.js';
+import { registerPayrollCommissionV5Routes } from './payroll_commission_v5.js';
+import { registerConsolidationV5Routes } from './consolidation_v5.js';
 import { registerSalesV5Routes } from './sales_v5.js';
 import { registerCampaignV4Routes } from './campaign_v4.js';
 import { registerOfficeV4ExtraRoutes } from './office_v4_extra.js';
@@ -26,7 +33,19 @@ const wrap=fn=>async(req,res)=>{try{await fn(req,res)}catch(e){console.error('ir
 async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT INTO audit_logs(company_id,user_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?)`,[req.user.companyId,Number(req.user.sub),action,type,id,JSON.stringify(payload||{}),req.ip,req.headers['user-agent']||null])}catch{}}
 
 export function registerIranExtensionRoutes(app){
+  // Backend field-level security applies to every enriched Iranian API registered below.
+  app.use(fieldPolicyMiddleware);
+
+  // Compliance and policy gates must be registered before legacy operational handlers.
   registerSalesV5Routes(app);
+  registerPayrollCommissionV5Routes(app);
+
+  registerBiV5Routes(app);
+  registerFxV5Routes(app);
+  registerSecurityV5Routes(app);
+  registerMaintenanceV5Routes(app);
+  registerConsolidationV5Routes(app);
+
   registerFinanceV3ControlRoutes(app);
   registerFinanceV3ExtraRoutes(app);
   registerCrmV4Routes(app);
