@@ -1,3 +1,11 @@
+import { registerCampaignV4Routes } from './campaign_v4.js';
+import { registerOfficeV4ExtraRoutes } from './office_v4_extra.js';
+import { registerBpmV4Routes } from './bpm_v4.js';
+import { registerLoyaltyV4Routes } from './loyalty_v4.js';
+import { registerCrmV4ExtraRoutes } from './crm_v4_extra.js';
+import { registerCrmV4Routes } from './crm_v4.js';
+import { registerFinanceV3ExtraRoutes } from './finance_v3_extra.js';
+import { registerFinanceV3ControlRoutes } from './finance_v3_controls.js';
 import { pool } from './db.js';
 import { requireRole } from './auth.js';
 import { registerPurchaseIranRoutes } from './purchase_iran.js';
@@ -17,6 +25,15 @@ const wrap=fn=>async(req,res)=>{try{await fn(req,res)}catch(e){console.error('ir
 async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT INTO audit_logs(company_id,user_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?)`,[req.user.companyId,Number(req.user.sub),action,type,id,JSON.stringify(payload||{}),req.ip,req.headers['user-agent']||null])}catch{}}
 
 export function registerIranExtensionRoutes(app){
+  registerFinanceV3ControlRoutes(app);
+  registerFinanceV3ExtraRoutes(app);
+  registerCrmV4Routes(app);
+  registerCrmV4ExtraRoutes(app);
+  registerLoyaltyV4Routes(app);
+  registerBpmV4Routes(app);
+  registerOfficeV4ExtraRoutes(app);
+  registerCampaignV4Routes(app);
+
   registerAdminV2Routes(app);
   registerTreasuryV2Routes(app);
   registerBankImportV2Routes(app);
