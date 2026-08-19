@@ -1,3 +1,4 @@
+import { registerSalesV5Routes } from './sales_v5.js';
 import { registerCampaignV4Routes } from './campaign_v4.js';
 import { registerOfficeV4ExtraRoutes } from './office_v4_extra.js';
 import { registerBpmV4Routes } from './bpm_v4.js';
@@ -25,6 +26,7 @@ const wrap=fn=>async(req,res)=>{try{await fn(req,res)}catch(e){console.error('ir
 async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT INTO audit_logs(company_id,user_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?)`,[req.user.companyId,Number(req.user.sub),action,type,id,JSON.stringify(payload||{}),req.ip,req.headers['user-agent']||null])}catch{}}
 
 export function registerIranExtensionRoutes(app){
+  registerSalesV5Routes(app);
   registerFinanceV3ControlRoutes(app);
   registerFinanceV3ExtraRoutes(app);
   registerCrmV4Routes(app);
