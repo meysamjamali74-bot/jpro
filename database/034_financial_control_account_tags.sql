@@ -13,18 +13,22 @@ CREATE TABLE IF NOT EXISTS account_control_tags (
   CONSTRAINT fk_act_user FOREIGN KEY(created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Only seed tags for account codes that are explicitly standardized by previous migrations.
+-- Only seed tags whose source is explicit and authoritative in existing schema.
 INSERT IGNORE INTO account_control_tags(company_id,account_id,control_tag,created_by)
 SELECT a.company_id,a.id,'INTERCOMPANY_DUE_FROM',MIN(u.id)
-FROM accounts a JOIN users u ON u.company_id=a.company_id WHERE a.code='120900' GROUP BY a.company_id,a.id;
+FROM accounts a JOIN users u ON u.company_id=a.company_id
+WHERE a.code='120900' GROUP BY a.company_id,a.id;
+
 INSERT IGNORE INTO account_control_tags(company_id,account_id,control_tag,created_by)
 SELECT a.company_id,a.id,'INTERCOMPANY_DUE_TO',MIN(u.id)
-FROM accounts a JOIN users u ON u.company_id=a.company_id WHERE a.code='220900' GROUP BY a.company_id,a.id;
+FROM accounts a JOIN users u ON u.company_id=a.company_id
+WHERE a.code='220900' GROUP BY a.company_id,a.id;
+
 INSERT IGNORE INTO account_control_tags(company_id,account_id,control_tag,created_by)
 SELECT b.company_id,b.gl_account_id,'BANK',MIN(u.id)
 FROM bank_accounts b JOIN users u ON u.company_id=b.company_id
-WHERE b.gl_account_id IS NOT NULL GROUP BY b.company_id,b.gl_account_id;
-INSERT IGNORE INTO account_control_tags(company_id,account_id,control_tag,created_by)
-SELECT s.company_id,s.grni_account_id,'GRNI',MIN(u.id)
-FROM treasury_account_settings s JOIN users u ON u.company_id=s.company_id
-WHERE s.grni_account_id IS NOT NULL GROUP BY s.company_id,s.grni_account_id;
+WHERE b.gl_account_id IS NOT NULL
+GROUP BY b.company_id,b.gl_account_id;
+
+-- GRNI/GRIR/SUSPENSE are deliberately NOT guessed from account codes.
+-- Finance management assigns these tags explicitly through the control-tag API.
