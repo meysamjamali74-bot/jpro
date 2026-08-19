@@ -1,3 +1,4 @@
+import { registerComplianceFinalV7 } from './compliance_final_v7.js';
 import { registerYearEndFinalV7 } from './year_end_final_v7.js';
 import { registerFinanceReportsFinalV7 } from './finance_reports_final_v7.js';
 import { registerComplianceControlOverrideV7 } from './compliance_control_override_v7.js';
@@ -58,8 +59,10 @@ export function registerIranExtensionRoutes(app){
   registerYearEndFinalV7(app);
   registerYearEndV7Routes(app);
   registerStatementDesignerV7Routes(app);
-  registerComplianceControlOverrideV7(app);
+  registerComplianceFinalV7(app);
   registerComplianceV7Routes(app);
+
+  // Enterprise 1.7 authoritative route owners.
 
   // Enterprise 1.7 authoritative financial/reporting control order.
 
