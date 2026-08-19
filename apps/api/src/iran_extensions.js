@@ -4,6 +4,7 @@ import { registerPurchaseIranRoutes } from './purchase_iran.js';
 import { registerPurchaseContextRoutes } from './purchase_context.js';
 import { registerPayrollIranRoutes } from './payroll_iran.js';
 import { registerPayrollExtraRoutes } from './payroll_extra.js';
+import { registerTreasuryV2Routes } from './treasury_v2.js';
 
 const n=v=>Number(v||0),text=v=>String(v??'').trim();
 const fail=(message,status=400,details=null)=>{const e=new Error(message);e.status=status;e.details=details;throw e};
@@ -12,6 +13,7 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 async function nextNo(conn,companyId,type,prefix){const lock=`tarazpad:extseq:${companyId}:${type}`;const [[g]]=await conn.query('SELECT GET_LOCK(?,5) got',[lock]);if(!g?.got)fail('شماره‌گذاری سند موقتاً درگیر است.',409);try{let [rows]=await conn.execute(`SELECT id,last_number,prefix,pad_length FROM document_sequences WHERE company_id=? AND branch_id IS NULL AND fiscal_year_id IS NULL AND document_type=? ORDER BY id LIMIT 1 FOR UPDATE`,[companyId,type]);if(!rows.length){await conn.execute(`INSERT INTO document_sequences(company_id,document_type,prefix,last_number,pad_length) VALUES (?,?,?,0,6)`,[companyId,type,prefix]);[rows]=await conn.execute(`SELECT id,last_number,prefix,pad_length FROM document_sequences WHERE company_id=? AND branch_id IS NULL AND fiscal_year_id IS NULL AND document_type=? ORDER BY id LIMIT 1 FOR UPDATE`,[companyId,type])}const r=rows[0],v=n(r.last_number)+1;await conn.execute('UPDATE document_sequences SET last_number=? WHERE id=?',[v,r.id]);return `${r.prefix||prefix}-${String(v).padStart(Number(r.pad_length||6),'0')}`}finally{await conn.query('SELECT RELEASE_LOCK(?)',[lock])}}
 
 export function registerIranExtensionRoutes(app){
+ registerTreasuryV2Routes(app);
  registerPayrollIranRoutes(app);
  registerPayrollExtraRoutes(app);
  registerPurchaseContextRoutes(app);
