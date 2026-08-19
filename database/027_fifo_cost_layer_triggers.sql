@@ -45,8 +45,10 @@ BEGIN
   DECLARE v_company BIGINT UNSIGNED;
   DECLARE v_warehouse BIGINT UNSIGNED;
   DECLARE v_date DATETIME;
+  DECLARE v_policy VARCHAR(50) DEFAULT 'FIFO';
   SELECT company_id,warehouse_id,receipt_date INTO v_company,v_warehouse,v_date FROM goods_receipts WHERE id=NEW.goods_receipt_id;
-  IF NEW.accepted_qty>0 THEN
+  SELECT COALESCE(MAX(inventory_valuation),'FIFO') INTO v_policy FROM company_accounting_policies WHERE company_id=v_company;
+  IF NEW.accepted_qty>0 AND v_policy='FIFO' THEN
     INSERT IGNORE INTO inventory_cost_layers(company_id,warehouse_id,product_id,goods_receipt_line_id,layer_date,original_qty,remaining_qty,base_unit_cost,status)
     VALUES(v_company,v_warehouse,NEW.product_id,NEW.id,v_date,NEW.accepted_qty,NEW.accepted_qty,NEW.unit_cost,'OPEN');
   END IF;
@@ -57,12 +59,14 @@ AFTER INSERT ON inventory_movements
 FOR EACH ROW
 BEGIN
   DECLARE v_out DECIMAL(20,4) DEFAULT 0;
+  DECLARE v_policy VARCHAR(50) DEFAULT 'FIFO';
+  SELECT COALESCE(MAX(inventory_valuation),'FIFO') INTO v_policy FROM company_accounting_policies WHERE company_id=NEW.company_id;
   IF NEW.quantity < 0 THEN
     SET v_out = ABS(NEW.quantity);
   ELSEIF NEW.movement_type IN ('ISSUE','TRANSFER_OUT','RETURN_OUT','SALE_OUT','TRIP_LOAD') THEN
     SET v_out = NEW.quantity;
   END IF;
-  IF v_out > 0.00005 THEN
+  IF v_out > 0.00005 AND v_policy='FIFO' THEN
     CALL sp_tarazpad_consume_fifo(NEW.company_id,NEW.warehouse_id,NEW.product_id,v_out,NEW.id,NEW.source_type,NEW.source_id,NEW.movement_date);
   END IF;
 END$$
