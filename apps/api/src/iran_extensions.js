@@ -1,3 +1,4 @@
+import { registerFinanceReportsFinalV7 } from './finance_reports_final_v7.js';
 import { registerComplianceControlOverrideV7 } from './compliance_control_override_v7.js';
 import { registerStatementRenderUnifiedV7 } from './statement_render_unified_v7.js';
 import { registerYearEndOpeningOverrideV7 } from './year_end_opening_override_v7.js';
@@ -51,7 +52,8 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
 
-  // Enterprise 1.7 final control order with compliance source integrity.
+  // Enterprise 1.7 authoritative financial/reporting control order.
+  registerFinanceReportsFinalV7(app);
   registerStatementRenderUnifiedV7(app);
   registerFiscalScopeReportingOverrideV7(app);
   registerHistoricalReportingOverrideV7(app);
@@ -62,6 +64,8 @@ export function registerIranExtensionRoutes(app){
   registerStatementDesignerV7Routes(app);
   registerComplianceControlOverrideV7(app);
   registerComplianceV7Routes(app);
+
+  // Enterprise 1.7 final control order with compliance source integrity.
 
   // Enterprise 1.7 final control order with compliance source integrity.
 
