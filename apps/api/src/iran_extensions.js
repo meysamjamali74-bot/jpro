@@ -1,3 +1,5 @@
+import { registerFinanceReportingOverridesV6 } from './finance_reporting_overrides_v6.js';
+import { registerFinanceReportingV6Routes } from './finance_reporting_v6.js';
 import { fieldPolicyMiddleware } from './field_policy_middleware.js';
 import { registerBiV5Routes } from './bi_v5.js';
 import { registerFxRevaluationPostV5Routes } from './fx_revaluation_post_v5.js';
@@ -38,6 +40,10 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 
 export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
+
+  // Financial reporting overrides precede the underlying reporting routes.
+  registerFinanceReportingOverridesV6(app);
+  registerFinanceReportingV6Routes(app);
 
   // WMS/valuation overrides must precede older fulfillment routes.
   registerWmsFulfillmentV5Routes(app);
