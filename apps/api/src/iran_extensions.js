@@ -1,3 +1,4 @@
+import { registerFiscalScopeReportingOverrideV7 } from './fiscal_scope_reporting_override_v7.js';
 import { registerHistoricalReportingOverrideV7 } from './historical_reporting_override_v7.js';
 import { registerStatementRenderOverrideV7 } from './statement_render_override_v7.js';
 import { registerYearEndCalculateOverrideV7 } from './year_end_calculate_override_v7.js';
@@ -47,17 +48,20 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
 
-
-  // Historical performance statements must exclude system year-end closing entries.
+  // Enterprise 1.7 deterministic control order.
+  registerFiscalScopeReportingOverrideV7(app);
   registerHistoricalReportingOverrideV7(app);
   registerStatementRenderOverrideV7(app);
-
-
-  // Enterprise 1.7: year-end, financial statement designer and statutory compliance.
   registerYearEndCalculateOverrideV7(app);
   registerYearEndV7Routes(app);
   registerStatementDesignerV7Routes(app);
   registerComplianceV7Routes(app);
+
+
+  // Historical performance statements must exclude system year-end closing entries.
+
+
+  // Enterprise 1.7: year-end, financial statement designer and statutory compliance.
 
   // Financial reporting overrides precede the underlying reporting routes.
   registerFinanceReportingOverridesV6(app);
