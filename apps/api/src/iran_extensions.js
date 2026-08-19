@@ -1,3 +1,4 @@
+import { registerStatementFormulaControlsV7 } from './statement_formula_controls_v7.js';
 import { registerComplianceFinalV7 } from './compliance_final_v7.js';
 import { registerYearEndFinalV7 } from './year_end_final_v7.js';
 import { registerFinanceReportsFinalV7 } from './finance_reports_final_v7.js';
@@ -54,13 +55,16 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
 
-  // Enterprise 1.7 authoritative route owners.
+  // Enterprise 1.7 authoritative route owners with structural formula validation.
   registerFinanceReportsFinalV7(app);
   registerYearEndFinalV7(app);
   registerYearEndV7Routes(app);
+  registerStatementFormulaControlsV7(app);
   registerStatementDesignerV7Routes(app);
   registerComplianceFinalV7(app);
   registerComplianceV7Routes(app);
+
+  // Enterprise 1.7 authoritative route owners.
 
   // Enterprise 1.7 authoritative route owners.
 
