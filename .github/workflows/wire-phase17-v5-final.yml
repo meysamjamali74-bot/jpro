@@ -1,0 +1,34 @@
+name: Wire Tarazpad Enterprise 1.7 V5 Final
+on:
+  push:
+    branches: [enterprise-phase-1-7]
+    paths: ['.github/workflows/wire-phase17-v5-final.yml']
+permissions:
+  contents: write
+jobs:
+  wire-final-serialized:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: enterprise-phase-1-7
+          fetch-depth: 0
+      - name: Refresh branch
+        run: git pull --rebase origin enterprise-phase-1-7
+      - name: Apply deterministic wiring
+        run: python3 scripts/wire_phase17_v4.py
+      - name: Validate runtime syntax
+        run: |
+          find apps/api/src apps/web -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Commit and push serialized wiring
+        run: |
+          if git diff --quiet; then
+            echo 'Runtime already has final Phase 1.7 wiring.'
+            exit 0
+          fi
+          git config user.name 'tarazpad-release-bot'
+          git config user.email 'actions@tarazpad.local'
+          git add apps/api/src/iran_extensions.js apps/web/fa-overlay.js
+          git commit -m 'Serialize final Enterprise 1.7 runtime wiring'
+          git pull --rebase origin enterprise-phase-1-7
+          git push origin HEAD:enterprise-phase-1-7

@@ -1,3 +1,17 @@
+import { registerStatementFormulaControlsV7 } from './statement_formula_controls_v7.js';
+import { registerComplianceFinalV7 } from './compliance_final_v7.js';
+import { registerYearEndFinalV7 } from './year_end_final_v7.js';
+import { registerFinanceReportsFinalV7 } from './finance_reports_final_v7.js';
+import { registerComplianceControlOverrideV7 } from './compliance_control_override_v7.js';
+import { registerStatementRenderUnifiedV7 } from './statement_render_unified_v7.js';
+import { registerYearEndOpeningOverrideV7 } from './year_end_opening_override_v7.js';
+import { registerFiscalScopeReportingOverrideV7 } from './fiscal_scope_reporting_override_v7.js';
+import { registerHistoricalReportingOverrideV7 } from './historical_reporting_override_v7.js';
+import { registerStatementRenderOverrideV7 } from './statement_render_override_v7.js';
+import { registerYearEndCalculateOverrideV7 } from './year_end_calculate_override_v7.js';
+import { registerYearEndV7Routes } from './year_end_v7.js';
+import { registerStatementDesignerV7Routes } from './statement_designer_v7.js';
+import { registerComplianceV7Routes } from './compliance_v7.js';
 import { registerFinanceReportingOverridesV6 } from './finance_reporting_overrides_v6.js';
 import { registerFinanceReportingV6Routes } from './finance_reporting_v6.js';
 import { fieldPolicyMiddleware } from './field_policy_middleware.js';
@@ -40,6 +54,37 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 
 export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
+
+  // Enterprise 1.7 authoritative route owners with structural formula validation.
+  registerFinanceReportsFinalV7(app);
+  registerYearEndFinalV7(app);
+  registerYearEndV7Routes(app);
+  registerStatementFormulaControlsV7(app);
+  registerStatementDesignerV7Routes(app);
+  registerComplianceFinalV7(app);
+  registerComplianceV7Routes(app);
+
+  // Enterprise 1.7 authoritative route owners.
+
+  // Enterprise 1.7 authoritative route owners.
+
+  // Enterprise 1.7 authoritative financial/reporting control order.
+
+  // Enterprise 1.7 final control order with compliance source integrity.
+
+  // Enterprise 1.7 final control order with compliance source integrity.
+
+  // Enterprise 1.7 unified statement and close control order.
+
+  // Enterprise 1.7 final deterministic control order.
+
+  // Enterprise 1.7 deterministic control order.
+
+
+  // Historical performance statements must exclude system year-end closing entries.
+
+
+  // Enterprise 1.7: year-end, financial statement designer and statutory compliance.
 
   // Financial reporting overrides precede the underlying reporting routes.
   registerFinanceReportingOverridesV6(app);
