@@ -1,10 +1,12 @@
 import { fieldPolicyMiddleware } from './field_policy_middleware.js';
 import { registerBiV5Routes } from './bi_v5.js';
+import { registerFxRevaluationPostV5Routes } from './fx_revaluation_post_v5.js';
 import { registerFxV5Routes } from './fx_v5.js';
 import { registerSecurityV5Routes } from './security_v5.js';
 import { registerMaintenanceV5Routes } from './maintenance_v5.js';
 import { registerPayrollCommissionV5Routes } from './payroll_commission_v5.js';
 import { registerConsolidationV5Routes } from './consolidation_v5.js';
+import { registerSalesCostPolicyV5Routes } from './sales_cost_policy_v5.js';
 import { registerSalesV5Routes } from './sales_v5.js';
 import { registerCampaignV4Routes } from './campaign_v4.js';
 import { registerOfficeV4ExtraRoutes } from './office_v4_extra.js';
@@ -37,10 +39,12 @@ export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
 
   // Compliance and policy gates must be registered before legacy operational handlers.
+  registerSalesCostPolicyV5Routes(app);
   registerSalesV5Routes(app);
   registerPayrollCommissionV5Routes(app);
 
   registerBiV5Routes(app);
+  registerFxRevaluationPostV5Routes(app);
   registerFxV5Routes(app);
   registerSecurityV5Routes(app);
   registerMaintenanceV5Routes(app);
