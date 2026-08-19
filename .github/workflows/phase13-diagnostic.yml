@@ -1,0 +1,66 @@
+name: Tarazpad Phase 1.3 Diagnostic E2E
+on:
+  push:
+    branches: [enterprise-phase-1-3]
+  pull_request:
+
+jobs:
+  phase13-e2e:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_p13_2026
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: phase13_db_2026
+        ports: [3306:3306]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_p13_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: apps/api
+        run: npm install
+      - name: Syntax and unit gates
+        run: |
+          set -euo pipefail
+          find apps/api/src apps/web scripts -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+          npm --prefix apps/api test
+      - name: Start Tarazpad
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: phase13_db_2026
+          JWT_SECRET: phase13_diagnostic_secret_2026_long_enough
+          TARAZPAD_ADMIN_EMAIL: phase13@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Phase13_2026!
+          TARAZPAD_ADMIN_NAME: Phase13 Admin
+        run: |
+          node apps/api/src/server.js > /tmp/phase13-server.log 2>&1 &
+          echo $! >/tmp/tarazpad.pid
+          ok=0
+          for i in {1..60}; do if curl -fsS http://127.0.0.1:8080/api/health >/dev/null; then ok=1; break; fi; sleep 2; done
+          if [ "$ok" != "1" ]; then cat /tmp/phase13-server.log; exit 1; fi
+      - name: Run Enterprise 1.3 E2E
+        env:
+          TARAZPAD_URL: http://127.0.0.1:8080
+          TARAZPAD_ADMIN_EMAIL: phase13@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Phase13_2026!
+        run: node scripts/e2e_phase13.mjs 2>&1 | tee /tmp/phase13-e2e.log
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase13-diagnostic-logs
+          path: |
+            /tmp/phase13-e2e.log
+            /tmp/phase13-server.log
