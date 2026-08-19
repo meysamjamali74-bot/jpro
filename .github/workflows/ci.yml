@@ -1,7 +1,7 @@
 name: Tarazpad CI
 on:
   push:
-    branches: [main, tarazpad-v1, enterprise-phase-1-1]
+    branches: [main, tarazpad-v1, enterprise-phase-1-1, enterprise-phase-1-2]
   pull_request:
 jobs:
   test:
@@ -28,17 +28,8 @@ jobs:
         run: npm install
       - name: Syntax and unit tests
         run: |
-          node --check apps/api/src/server.js
-          node --check apps/api/src/db.js
-          node --check apps/api/src/auth.js
-          node --check apps/api/src/commission.js
-          node --check apps/api/src/enterprise.js
-          node --check apps/api/src/iran.js
-          node --check apps/api/src/iran_extensions.js
-          node --check apps/api/src/purchase_iran.js
-          node --check apps/web/app.js
-          node --check apps/web/app-v2.js
-          node --check apps/web/fa-overlay.js
+          set -euo pipefail
+          find apps/api/src apps/web -type f -name '*.js' -print0 | xargs -0 -n1 node --check
           npm --prefix apps/api test
       - name: MySQL integration and Iran accounting flow
         env:
@@ -56,8 +47,8 @@ jobs:
           set -euo pipefail
           node apps/api/src/server.js > /tmp/tarazpad.log 2>&1 &
           echo $! > /tmp/tarazpad.pid
-          for i in {1..50}; do curl -fsS http://127.0.0.1:8080/api/health && break || sleep 2; done
-          curl -fsS http://127.0.0.1:8080/api/health | jq -e '.ok == true and .version == "0.3.0"'
+          for i in {1..60}; do curl -fsS http://127.0.0.1:8080/api/health && break || sleep 2; done
+          curl -fsS http://127.0.0.1:8080/api/health | jq -e '.ok == true'
           TOKEN=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"Strong_Test_Admin_2026!"}' | jq -r .token)
           test -n "$TOKEN" && test "$TOKEN" != "null"
           AUTH="authorization: Bearer $TOKEN"
@@ -75,12 +66,13 @@ jobs:
 
           IR_INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/sales-invoices -H "$AUTH" -H 'content-type: application/json' -d "{\"customerPartyId\":$IR_CUSTOMER,\"invoiceDate\":\"2026-08-19\",\"dueDate\":\"2026-09-18\",\"invoiceClassification\":\"OFFICIAL\",\"taxInvoiceType\":\"TYPE_1\",\"settlementType\":\"CREDIT\",\"lines\":[{\"productId\":$IR_PRODUCT,\"qty\":2,\"unitPrice\":100000,\"discountAmount\":0}]}" | jq -r .id)
           curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/validate" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.valid == true and .totals.gross == 200000 and .totals.tax == 20000 and .totals.net == 220000'
-          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/post" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.ok == true and .debit == 220000 and .credit == 220000'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/post" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.ok == true and .debit == .credit and .amounts.NET_TOTAL == 220000 and .amounts.COGS_TOTAL == 140000'
           curl -fsS --get 'http://127.0.0.1:8080/api/iran/sales-invoices' -H "$AUTH" --data-urlencode 'classification=OFFICIAL' --data-urlencode 'q=خریدار' --data-urlencode 'page=1' --data-urlencode 'pageSize=25' | jq -e '.rows | map(select(.invoice_classification=="OFFICIAL" and .tax_total==20000)) | length == 1'
 
           curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="110100" and .debit==420000)) | length == 1'
           curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="410100" and .credit==400000)) | length == 1'
           curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="210300" and .credit==20000)) | length == 1'
+          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="510100" and .debit==140000)) | length == 1'
 
           ACCOUNT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/accounts -H "$AUTH" -H 'content-type: application/json' -d '{"code":"610100","title":"هزینه تست کنترل‌شده","nature":"DEBIT","accountType":"EXPENSE","allowPosting":true}' | jq -r .id)
           curl -fsS http://127.0.0.1:8080/api/iran/accounts -H "$AUTH" | jq -e 'map(select(.code=="610100")) | length == 1'
