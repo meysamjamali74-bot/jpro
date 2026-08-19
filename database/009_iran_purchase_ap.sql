@@ -1,0 +1,39 @@
+ALTER TABLE purchase_invoices ADD COLUMN posting_date DATE NULL, ADD COLUMN due_date DATE NULL, ADD COLUMN supplier_invoice_no VARCHAR(100) NULL, ADD COLUMN invoice_classification ENUM('OFFICIAL','NON_OFFICIAL') NOT NULL DEFAULT 'NON_OFFICIAL', ADD COLUMN tax_invoice_type ENUM('TYPE_1','TYPE_2','TYPE_3','NON_ELECTRONIC') NULL, ADD COLUMN tax_unique_no VARCHAR(40) NULL, ADD COLUMN settlement_type ENUM('CASH','CREDIT','MIXED') NOT NULL DEFAULT 'CREDIT', ADD COLUMN other_duties_total DECIMAL(20,2) NOT NULL DEFAULT 0, ADD COLUMN purchase_kind ENUM('GOODS','SERVICE','EXPENSE','ASSET') NOT NULL DEFAULT 'GOODS', ADD COLUMN purchase_order_id BIGINT UNSIGNED NULL, ADD COLUMN goods_receipt_id BIGINT UNSIGNED NULL, ADD COLUMN created_by BIGINT UNSIGNED NULL, ADD COLUMN posted_at DATETIME NULL, ADD COLUMN notes TEXT NULL, ADD COLUMN is_void TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN void_reason VARCHAR(500) NULL, ADD KEY ix_pi_date(company_id,invoice_date,status), ADD KEY ix_pi_po(purchase_order_id), ADD KEY ix_pi_gr(goods_receipt_id), ADD CONSTRAINT fk_pi_po FOREIGN KEY(purchase_order_id) REFERENCES purchase_orders(id), ADD CONSTRAINT fk_pi_gr FOREIGN KEY(goods_receipt_id) REFERENCES goods_receipts(id), ADD CONSTRAINT fk_pi_creator FOREIGN KEY(created_by) REFERENCES users(id);
+
+ALTER TABLE purchase_invoice_lines ADD COLUMN purchase_order_line_id BIGINT UNSIGNED NULL, ADD COLUMN goods_receipt_line_id BIGINT UNSIGNED NULL, ADD COLUMN discount_amount DECIMAL(20,2) NOT NULL DEFAULT 0, ADD COLUMN tax_amount DECIMAL(20,2) NOT NULL DEFAULT 0, ADD COLUMN goods_service_id VARCHAR(20) NULL, ADD COLUMN unit_code VARCHAR(20) NULL, ADD COLUMN vat_status ENUM('STANDARD','EXEMPT','ZERO','SPECIAL') NOT NULL DEFAULT 'STANDARD', ADD COLUMN vat_rate DECIMAL(8,4) NOT NULL DEFAULT 0, ADD COLUMN amount_before_discount DECIMAL(20,2) NOT NULL DEFAULT 0, ADD COLUMN amount_after_discount DECIMAL(20,2) NOT NULL DEFAULT 0, ADD COLUMN other_duties_amount DECIMAL(20,2) NOT NULL DEFAULT 0, ADD COLUMN account_id BIGINT UNSIGNED NULL, ADD CONSTRAINT fk_pil_pol FOREIGN KEY(purchase_order_line_id) REFERENCES purchase_order_lines(id), ADD CONSTRAINT fk_pil_grl FOREIGN KEY(goods_receipt_line_id) REFERENCES goods_receipt_lines(id), ADD CONSTRAINT fk_pil_account FOREIGN KEY(account_id) REFERENCES accounts(id);
+
+CREATE TABLE IF NOT EXISTS purchase_match_results (
+ id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,company_id BIGINT UNSIGNED NOT NULL,purchase_invoice_id BIGINT UNSIGNED NOT NULL,purchase_invoice_line_id BIGINT UNSIGNED NULL,purchase_order_line_id BIGINT UNSIGNED NULL,goods_receipt_line_id BIGINT UNSIGNED NULL,match_type ENUM('QUANTITY','PRICE','TAX','ITEM','NO_PO','NO_RECEIPT') NOT NULL,severity ENUM('INFO','WARNING','HIGH','CRITICAL') NOT NULL DEFAULT 'WARNING',expected_value DECIMAL(20,4) NULL,actual_value DECIMAL(20,4) NULL,variance_value DECIMAL(20,4) NULL,message VARCHAR(500) NOT NULL,status ENUM('OPEN','ACCEPTED','RESOLVED') NOT NULL DEFAULT 'OPEN',approved_by BIGINT UNSIGNED NULL,approved_at DATETIME NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ KEY ix_pmr_invoice(purchase_invoice_id,status,severity),CONSTRAINT fk_pmr_company FOREIGN KEY(company_id) REFERENCES companies(id),CONSTRAINT fk_pmr_invoice FOREIGN KEY(purchase_invoice_id) REFERENCES purchase_invoices(id) ON DELETE CASCADE,CONSTRAINT fk_pmr_line FOREIGN KEY(purchase_invoice_line_id) REFERENCES purchase_invoice_lines(id) ON DELETE CASCADE,CONSTRAINT fk_pmr_pol FOREIGN KEY(purchase_order_line_id) REFERENCES purchase_order_lines(id),CONSTRAINT fk_pmr_grl FOREIGN KEY(goods_receipt_line_id) REFERENCES goods_receipt_lines(id),CONSTRAINT fk_pmr_approver FOREIGN KEY(approved_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS grni_ledger (
+ id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,company_id BIGINT UNSIGNED NOT NULL,goods_receipt_line_id BIGINT UNSIGNED NOT NULL,product_id BIGINT UNSIGNED NOT NULL,received_qty DECIMAL(20,4) NOT NULL,unit_cost DECIMAL(20,4) NOT NULL,received_value DECIMAL(20,2) NOT NULL,invoiced_qty DECIMAL(20,4) NOT NULL DEFAULT 0,invoiced_value DECIMAL(20,2) NOT NULL DEFAULT 0,status ENUM('OPEN','PARTIAL','CLOSED') NOT NULL DEFAULT 'OPEN',created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ UNIQUE KEY uq_grni_line(goods_receipt_line_id),KEY ix_grni_open(company_id,status,product_id),CONSTRAINT fk_grni_company FOREIGN KEY(company_id) REFERENCES companies(id),CONSTRAINT fk_grni_grl FOREIGN KEY(goods_receipt_line_id) REFERENCES goods_receipt_lines(id),CONSTRAINT fk_grni_product FOREIGN KEY(product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT IGNORE INTO accounts(company_id,code,title,level_no,nature,account_type,allow_posting)
+SELECT id,'210100','حساب‌های پرداختنی تجاری',3,'CREDIT','LIABILITY',1 FROM companies;
+INSERT IGNORE INTO accounts(company_id,code,title,level_no,nature,account_type,allow_posting)
+SELECT id,'210150','کالای دریافت‌شده صورتحساب‌نشده',3,'CREDIT','LIABILITY',1 FROM companies;
+INSERT IGNORE INTO accounts(company_id,code,title,level_no,nature,account_type,allow_posting)
+SELECT id,'120200','مالیات و عوارض ارزش افزوده خرید',3,'DEBIT','ASSET',1 FROM companies;
+INSERT IGNORE INTO accounts(company_id,code,title,level_no,nature,account_type,allow_posting)
+SELECT id,'610200','هزینه خرید خدمات و هزینه‌های عمومی',3,'DEBIT','EXPENSE',1 FROM companies;
+
+INSERT IGNORE INTO accounting_rule_lines(company_id,event_code,line_role,amount_source,account_id,party_source,priority,is_active)
+SELECT c.id,'GOODS_RECEIPT_IR','DEBIT','RECEIVED_VALUE',inv.id,NULL,10,1 FROM companies c JOIN accounts inv ON inv.company_id=c.id AND inv.code='130100';
+INSERT IGNORE INTO accounting_rule_lines(company_id,event_code,line_role,amount_source,account_id,party_source,priority,is_active)
+SELECT c.id,'GOODS_RECEIPT_IR','CREDIT','RECEIVED_VALUE',grni.id,NULL,20,1 FROM companies c JOIN accounts grni ON grni.company_id=c.id AND grni.code='210150';
+INSERT IGNORE INTO accounting_rule_lines(company_id,event_code,line_role,amount_source,account_id,party_source,priority,is_active)
+SELECT c.id,'PURCHASE_INVOICE_GOODS_IR','DEBIT','NET_BEFORE_TAX',grni.id,NULL,10,1 FROM companies c JOIN accounts grni ON grni.company_id=c.id AND grni.code='210150';
+INSERT IGNORE INTO accounting_rule_lines(company_id,event_code,line_role,amount_source,account_id,party_source,priority,is_active)
+SELECT c.id,'PURCHASE_INVOICE_GOODS_IR','DEBIT','VAT_TOTAL',vat.id,NULL,20,1 FROM companies c JOIN accounts vat ON vat.company_id=c.id AND vat.code='120200';
+INSERT IGNORE INTO accounting_rule_lines(company_id,event_code,line_role,amount_source,account_id,party_source,priority,is_active)
+SELECT c.id,'PURCHASE_INVOICE_GOODS_IR','CREDIT','NET_TOTAL',ap.id,'SUPPLIER',30,1 FROM companies c JOIN accounts ap ON ap.company_id=c.id AND ap.code='210100';
+INSERT IGNORE INTO accounting_rule_lines(company_id,event_code,line_role,amount_source,account_id,party_source,priority,is_active)
+SELECT c.id,'PURCHASE_INVOICE_SERVICE_IR','DEBIT','NET_BEFORE_TAX',exp.id,NULL,10,1 FROM companies c JOIN accounts exp ON exp.company_id=c.id AND exp.code='610200';
+INSERT IGNORE INTO accounting_rule_lines(company_id,event_code,line_role,amount_source,account_id,party_source,priority,is_active)
+SELECT c.id,'PURCHASE_INVOICE_SERVICE_IR','DEBIT','VAT_TOTAL',vat.id,NULL,20,1 FROM companies c JOIN accounts vat ON vat.company_id=c.id AND vat.code='120200';
+INSERT IGNORE INTO accounting_rule_lines(company_id,event_code,line_role,amount_source,account_id,party_source,priority,is_active)
+SELECT c.id,'PURCHASE_INVOICE_SERVICE_IR','CREDIT','NET_TOTAL',ap.id,'SUPPLIER',30,1 FROM companies c JOIN accounts ap ON ap.company_id=c.id AND ap.code='210100';

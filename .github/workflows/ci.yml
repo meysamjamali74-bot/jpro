@@ -1,7 +1,7 @@
 name: Tarazpad CI
 on:
   push:
-    branches: [main, tarazpad-v1]
+    branches: [main, tarazpad-v1, enterprise-phase-1-1]
   pull_request:
 jobs:
   test:
@@ -32,9 +32,15 @@ jobs:
           node --check apps/api/src/db.js
           node --check apps/api/src/auth.js
           node --check apps/api/src/commission.js
+          node --check apps/api/src/enterprise.js
+          node --check apps/api/src/iran.js
+          node --check apps/api/src/iran_extensions.js
+          node --check apps/api/src/purchase_iran.js
           node --check apps/web/app.js
+          node --check apps/web/app-v2.js
+          node --check apps/web/fa-overlay.js
           npm --prefix apps/api test
-      - name: MySQL integration smoke test
+      - name: MySQL integration and Iran accounting flow
         env:
           PORT: 8080
           MYSQL_HOST: 127.0.0.1
@@ -47,17 +53,46 @@ jobs:
           TARAZPAD_ADMIN_PASSWORD: Strong_Test_Admin_2026!
           TARAZPAD_ADMIN_NAME: Test Admin
         run: |
+          set -euo pipefail
           node apps/api/src/server.js > /tmp/tarazpad.log 2>&1 &
           echo $! > /tmp/tarazpad.pid
-          for i in {1..40}; do curl -fsS http://127.0.0.1:8080/api/health && break || sleep 2; done
+          for i in {1..50}; do curl -fsS http://127.0.0.1:8080/api/health && break || sleep 2; done
+          curl -fsS http://127.0.0.1:8080/api/health | jq -e '.ok == true and .version == "0.3.0"'
           TOKEN=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"Strong_Test_Admin_2026!"}' | jq -r .token)
           test -n "$TOKEN" && test "$TOKEN" != "null"
-          CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/parties -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"name":"مشتری تست","partyType":"LEGAL","roles":["CUSTOMER"]}' | jq -r .id)
-          PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/products -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"sku":"TEST-001","name":"کالای تست","unit":"عدد","salePrice":100000}' | jq -r .id)
-          INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/sales/invoices -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"lines\":[{\"productId\":$PRODUCT,\"qty\":2,\"unitPrice\":100000}]}" | jq -r .id)
-          curl -fsS -X POST "http://127.0.0.1:8080/api/sales/invoices/$INVOICE/post" -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' | jq -e '.ok == true'
-          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "authorization: Bearer $TOKEN" | jq -e 'map(select(.code=="110100" and .debit==200000)) | length == 1'
-          curl -fsS http://127.0.0.1:8080/api/dashboard/summary -H "authorization: Bearer $TOKEN" | jq -e '.sales_month >= 200000'
+          AUTH="authorization: Bearer $TOKEN"
+
+          CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/parties -H "$AUTH" -H 'content-type: application/json' -d '{"name":"مشتری پایه","partyType":"LEGAL","roles":["CUSTOMER"]}' | jq -r .id)
+          PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/products -H "$AUTH" -H 'content-type: application/json' -d '{"sku":"TEST-001","name":"کالای پایه","unit":"عدد","salePrice":100000}' | jq -r .id)
+          INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/sales/invoices -H "$AUTH" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"lines\":[{\"productId\":$PRODUCT,\"qty\":2,\"unitPrice\":100000}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/sales/invoices/$INVOICE/post" -H "$AUTH" -H 'content-type: application/json' | jq -e '.ok == true'
+
+          curl -fsS -X PUT http://127.0.0.1:8080/api/iran/tax/profile -H "$AUTH" -H 'content-type: application/json' -d '{"taxpayerMemoryId":"ABC123","economicCode":"411111111111","nationalId":"14000000000","postalCode":"1234567890","address":"Tehran","defaultInvoiceType":"TYPE_1","defaultInvoicePattern":"SALE","taxpayerSystemEnabled":true}' | jq -e '.ok == true'
+          curl -fsS http://127.0.0.1:8080/api/iran/tax/rates -H "$AUTH" | jq -e 'map(select(.tax_code=="VAT_GENERAL_1405" and .rate==10)) | length == 1'
+
+          IR_CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/parties -H "$AUTH" -H 'content-type: application/json' -d '{"name":"شرکت خریدار رسمی","partyType":"LEGAL","code":"C-100","nationalId":"14009999999","economicCode":"411199999999","registrationNo":"556677","postalCode":"1499999999","province":"تهران","city":"تهران","address":"تهران","mobile":"09120000000","creditLimit":5000000,"paymentTermsDays":30,"roles":["CUSTOMER"]}' | jq -r .id)
+          IR_PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/products -H "$AUTH" -H 'content-type: application/json' -d '{"sku":"IR-001","name":"کالای مشمول رسمی","productType":"GOODS","unit":"عدد","goodsServiceId":"1234567890123","unitCode":"1627","vatStatus":"STANDARD","defaultVatRate":10,"purchasePrice":70000,"salePrice":100000}' | jq -r .id)
+
+          IR_INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/sales-invoices -H "$AUTH" -H 'content-type: application/json' -d "{\"customerPartyId\":$IR_CUSTOMER,\"invoiceDate\":\"2026-08-19\",\"dueDate\":\"2026-09-18\",\"invoiceClassification\":\"OFFICIAL\",\"taxInvoiceType\":\"TYPE_1\",\"settlementType\":\"CREDIT\",\"lines\":[{\"productId\":$IR_PRODUCT,\"qty\":2,\"unitPrice\":100000,\"discountAmount\":0}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/validate" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.valid == true and .totals.gross == 200000 and .totals.tax == 20000 and .totals.net == 220000'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/post" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.ok == true and .debit == 220000 and .credit == 220000'
+          curl -fsS --get 'http://127.0.0.1:8080/api/iran/sales-invoices' -H "$AUTH" --data-urlencode 'classification=OFFICIAL' --data-urlencode 'q=خریدار' --data-urlencode 'page=1' --data-urlencode 'pageSize=25' | jq -e '.rows | map(select(.invoice_classification=="OFFICIAL" and .tax_total==20000)) | length == 1'
+
+          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="110100" and .debit==420000)) | length == 1'
+          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="410100" and .credit==400000)) | length == 1'
+          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="210300" and .credit==20000)) | length == 1'
+
+          ACCOUNT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/accounts -H "$AUTH" -H 'content-type: application/json' -d '{"code":"610100","title":"هزینه تست کنترل‌شده","nature":"DEBIT","accountType":"EXPENSE","allowPosting":true}' | jq -r .id)
+          curl -fsS http://127.0.0.1:8080/api/iran/accounts -H "$AUTH" | jq -e 'map(select(.code=="610100")) | length == 1'
+          curl -fsS -X DELETE "http://127.0.0.1:8080/api/iran/accounts/$ACCOUNT" -H "$AUTH" | jq -e '.deleted == true'
+
+          DEPT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/departments -H "$AUTH" -H 'content-type: application/json' -d '{"code":"FIN","title":"واحد مالی"}' | jq -r .id)
+          POS=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/positions -H "$AUTH" -H 'content-type: application/json' -d "{\"code\":\"ACC\",\"title\":\"حسابدار\",\"departmentId\":$DEPT}" | jq -r .id)
+          EMP=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/employees -H "$AUTH" -H 'content-type: application/json' -d "{\"personnelNo\":\"P-001\",\"name\":\"کارمند تست\",\"nationalNo\":\"0012345678\",\"insuranceNo\":\"INS-1\",\"hireDate\":\"2026-03-21\",\"departmentId\":$DEPT,\"positionId\":$POS}" | jq -r .partyId)
+          curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/contracts -H "$AUTH" -H 'content-type: application/json' -d "{\"employeePartyId\":$EMP,\"contractNo\":\"CTR-001\",\"contractType\":\"FIXED_TERM\",\"startDate\":\"2026-03-21\",\"endDate\":\"2027-03-20\",\"baseSalaryMonthly\":250000000,\"insuranceIncluded\":true,\"taxIncluded\":true}" | jq -e '.id > 0'
+          curl -fsS http://127.0.0.1:8080/api/iran/hr/employees -H "$AUTH" | jq -e 'map(select(.personnel_no=="P-001" and .department_title=="واحد مالی")) | length == 1'
+
+          curl -fsS http://127.0.0.1:8080/api/enterprise/dashboard -H "$AUTH" | jq -e '.open_exceptions >= 0 and .pending_approvals >= 0'
           kill $(cat /tmp/tarazpad.pid)
       - name: Upload server log on failure
         if: failure()

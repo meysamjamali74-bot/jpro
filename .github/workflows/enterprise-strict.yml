@@ -1,0 +1,116 @@
+name: Tarazpad Enterprise Strict Gate
+on:
+  push:
+    branches: [enterprise-phase-1-1, main]
+  pull_request:
+
+jobs:
+  strict-gate:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_strict_2026
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: strict_db_2026
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_strict_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: apps/api
+        run: npm install
+      - name: Syntax-check every JavaScript file
+        run: |
+          set -euo pipefail
+          find apps/api/src apps/web -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Unit tests
+        run: npm --prefix apps/api test
+      - name: Enterprise MySQL, HR and payroll accounting flow
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: strict_db_2026
+          JWT_SECRET: strict_gate_secret_tarazpad_2026_long_enough
+          TARAZPAD_ADMIN_EMAIL: strict@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Strict_2026!
+          TARAZPAD_ADMIN_NAME: Strict Gate Admin
+        run: |
+          set -euo pipefail
+          node apps/api/src/server.js > /tmp/tarazpad-strict.log 2>&1 &
+          echo $! > /tmp/tarazpad.pid
+          ok=0
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/health.json; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then cat /tmp/tarazpad-strict.log; exit 1; fi
+          jq -e '.ok == true' /tmp/health.json
+
+          TOKEN=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login \
+            -H 'content-type: application/json' \
+            -d '{"email":"strict@tarazpad.test","password":"Strong_Strict_2026!"}' | jq -r .token)
+          test -n "$TOKEN" && test "$TOKEN" != "null"
+          AUTH="authorization: Bearer $TOKEN"
+
+          curl -fsS http://127.0.0.1:8080/api/iran/payroll/legal-parameters -H "$AUTH" | jq -e 'length >= 1'
+          curl -fsS http://127.0.0.1:8080/api/iran/tax/rates -H "$AUTH" | jq -e 'map(select(.tax_code=="VAT_GENERAL_1405" and .rate==10)) | length == 1'
+
+          EMP=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/employees \
+            -H "$AUTH" -H 'content-type: application/json' \
+            -d '{"personnelNo":"STRICT-P-001","name":"کارمند کنترل نهایی","nationalNo":"0011223344","insuranceNo":"STRICT-INS","hireDate":"2026-03-21","maritalStatus":"MARRIED","childrenCount":1}' | jq -r .partyId)
+          test "$EMP" -gt 0
+
+          CONTRACT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/contracts \
+            -H "$AUTH" -H 'content-type: application/json' \
+            -d "{\"employeePartyId\":$EMP,\"contractNo\":\"STRICT-CTR-001\",\"contractType\":\"FIXED_TERM\",\"startDate\":\"2026-03-21\",\"endDate\":\"2027-03-20\",\"baseSalaryMonthly\":250000000,\"insuranceIncluded\":true,\"taxIncluded\":true,\"status\":\"ACTIVE\"}" | jq -r .id)
+          test "$CONTRACT" -gt 0
+
+          curl -fsS -X POST http://127.0.0.1:8080/api/iran/payroll/attendance \
+            -H "$AUTH" -H 'content-type: application/json' \
+            -d "{\"employeePartyId\":$EMP,\"yearNo\":1405,\"monthNo\":5,\"calendarDays\":31,\"workDays\":31,\"overtimeHours\":10,\"paidLeaveDays\":0,\"absenceDays\":0}" | jq -e '.ok == true'
+
+          LOAN=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/payroll/loans \
+            -H "$AUTH" -H 'content-type: application/json' \
+            -d "{\"employeePartyId\":$EMP,\"loanNo\":\"STRICT-L-001\",\"loanType\":\"LOAN\",\"principalAmount\":12000000,\"installmentAmount\":1000000,\"startDate\":\"2026-03-21\"}" | jq -r .id)
+          test "$LOAN" -gt 0
+
+          BATCH=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/payroll/batches \
+            -H "$AUTH" -H 'content-type: application/json' \
+            -d '{"yearNo":1405,"monthNo":5,"title":"حقوق تست نهایی ۱۴۰۵/۰۵"}' | jq -r .id)
+          test "$BATCH" -gt 0
+
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/calculate" \
+            -H "$AUTH" -H 'content-type: application/json' -d '{}' | \
+            jq -e '.employeeCount >= 1 and .totalGross > 0 and .totalNet > 0'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/review" \
+            -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.status == "REVIEWED"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/approve" \
+            -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.status == "APPROVED"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/post" \
+            -H "$AUTH" -H 'content-type: application/json' -d '{}' | \
+            jq -e '.ok == true and .debit > 0 and .debit == .credit'
+
+          curl -fsS "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/slips" -H "$AUTH" | \
+            jq -e 'length >= 1 and .[0].status == "POSTED" and .[0].net_pay > 0'
+          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | \
+            jq -e 'map(select(.code=="610900" and .debit>0)) | length == 1'
+          curl -fsS http://127.0.0.1:8080/ | grep -q 'ترازپاد'
+          kill $(cat /tmp/tarazpad.pid)
+      - name: Upload strict log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarazpad-enterprise-strict-log
+          path: /tmp/tarazpad-strict.log
