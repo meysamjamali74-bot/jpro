@@ -1,3 +1,5 @@
+import { registerHistoricalReportingOverrideV7 } from './historical_reporting_override_v7.js';
+import { registerStatementRenderOverrideV7 } from './statement_render_override_v7.js';
 import { registerYearEndCalculateOverrideV7 } from './year_end_calculate_override_v7.js';
 import { registerYearEndV7Routes } from './year_end_v7.js';
 import { registerStatementDesignerV7Routes } from './statement_designer_v7.js';
@@ -44,6 +46,11 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 
 export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
+
+
+  // Historical performance statements must exclude system year-end closing entries.
+  registerHistoricalReportingOverrideV7(app);
+  registerStatementRenderOverrideV7(app);
 
 
   // Enterprise 1.7: year-end, financial statement designer and statutory compliance.
