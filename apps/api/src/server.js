@@ -10,6 +10,7 @@ import { calculateCommission } from './commission.js';
 import { registerEnterpriseRoutes } from './enterprise.js';
 import { registerIranExtensionRoutes } from './iran_extensions.js';
 import { registerIranRoutes } from './iran.js';
+import { registerManagementProfitV8 } from './management_profit_v8.js';
 import { registerMasterDataBankV8Compat } from './masterdata_bank_v8_compat.js';
 import { registerMasterDataPrintV8 } from './masterdata_print_v8.js';
 
@@ -85,6 +86,7 @@ registerIranExtensionRoutes(app);
 registerIranRoutes(app);
 registerMasterDataBankV8Compat(app);
 registerMasterDataPrintV8(app);
+registerManagementProfitV8(app);
 app.use('/api',(req,res)=>res.status(404).json({error:'API_NOT_FOUND',path:req.path}));
 app.use(express.static(webDir,{index:'index.html',maxAge:process.env.NODE_ENV==='production'?'1h':0}));
 app.use((_req,res)=>res.sendFile(path.join(webDir,'index.html')));
