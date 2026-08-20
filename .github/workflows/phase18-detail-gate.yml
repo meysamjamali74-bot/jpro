@@ -7,6 +7,7 @@ on:
     paths:
       - 'database/042_masterdata_commercial_documents.sql'
       - 'database/043_masterdata_compatibility_upgrade.sql'
+      - 'database/044_bank_account_master_details.sql'
       - 'apps/api/src/commercial_master_v8.js'
       - 'apps/api/src/iran_extensions.js'
       - 'apps/web/phase18-ui.js'
@@ -45,9 +46,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: apps/api/package-lock.json
-      - run: npm ci --prefix apps/api
+      - run: npm install
       - name: Syntax check
         run: |
           node --check apps/api/src/commercial_master_v8.js
