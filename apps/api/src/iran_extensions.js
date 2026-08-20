@@ -1,3 +1,4 @@
+import { fiscalLockGuardV8 } from './fiscal_lock_guard_v8.js';
 import { registerBankMasterV8Routes } from './bank_master_v8.js';
 import { registerPrintMasterV8Routes } from './print_master_v8.js';
 import { registerCommercialMasterV8Routes } from './commercial_master_v8.js';
@@ -56,6 +57,7 @@ const wrap=fn=>async(req,res)=>{try{await fn(req,res)}catch(e){console.error('ir
 async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT INTO audit_logs(company_id,user_id,action,entity_type,entity_id,after_json,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?)`,[req.user.companyId,Number(req.user.sub),action,type,id,JSON.stringify(payload||{}),req.ip,req.headers['user-agent']||null])}catch{}}
 
 export function registerIranExtensionRoutes(app){
+  app.use(fiscalLockGuardV8);
   app.use(fieldPolicyMiddleware);
 
   // Enterprise 1.8 commercial master data, price lists, logistics and printing.
