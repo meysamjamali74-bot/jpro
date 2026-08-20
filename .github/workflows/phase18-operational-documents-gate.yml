@@ -1,0 +1,123 @@
+name: Enterprise 1.8 Operational Documents Gate
+
+on:
+  push:
+    branches: [enterprise-phase-1-8-ui-documents]
+  pull_request:
+    paths:
+      - 'database/042_operational_masterdata_printing.sql'
+      - 'database/043_party_contact_compatibility.sql'
+      - 'apps/api/src/operational_documents_v8.js'
+      - 'apps/api/src/iran_extensions.js'
+      - 'apps/web/phase18-ui.js'
+      - 'apps/web/fa-overlay.js'
+      - '.github/workflows/phase18-operational-documents-gate.yml'
+  workflow_dispatch:
+
+jobs:
+  phase18:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: tarazpad
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: tarazpad
+      MYSQL_USER: tarazpad
+      MYSQL_PASSWORD: tarazpad
+      JWT_SECRET: phase18-test-secret
+      TARAZPAD_ADMIN_EMAIL: admin@tarazpad.test
+      TARAZPAD_ADMIN_PASSWORD: Phase18_Strong_Test_2026!
+      TARAZPAD_ADMIN_NAME: مدیر تست ترازپاد
+      PORT: 8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - name: Install API dependencies
+        run: npm ci --prefix apps/api
+      - name: Syntax gates
+        run: |
+          node --check apps/api/src/operational_documents_v8.js
+          node --check apps/api/src/iran_extensions.js
+          node --check apps/web/phase18-ui.js
+          node --check apps/web/fa-overlay.js
+      - name: Start Tarazpad on fresh MySQL
+        run: |
+          npm --prefix apps/api start > /tmp/tarazpad-phase18.log 2>&1 &
+          echo $! > /tmp/tarazpad.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/health.json; then break; fi
+            sleep 2
+          done
+          cat /tmp/health.json || (cat /tmp/tarazpad-phase18.log && exit 1)
+      - name: End-to-end phase 1.8
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=http://127.0.0.1:8080
+          TOKEN=$(curl -fsS -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json' -d '{"email":"admin@tarazpad.test","password":"Phase18_Strong_Test_2026!"}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).token")
+          H=(-H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json')
+
+          PARTY=$(curl -fsS -X POST "$BASE/api/parties" "${H[@]}" -d '{"name":"مشتری تست چاپ","partyType":"LEGAL","nationalId":"14000000001","mobile":"09120000001","roles":["CUSTOMER"]}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
+          GROUP=$(curl -fsS -X POST "$BASE/api/iran/masterdata/party-groups" "${H[@]}" -d '{"code":"CUST-VIP","title":"مشتریان ویژه","groupType":"CUSTOMER"}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
+          curl -fsS -X PUT "$BASE/api/iran/masterdata/parties/$PARTY/card" "${H[@]}" -d "{\"name\":\"مشتری تست چاپ\",\"roles\":[\"CUSTOMER\"],\"groupIds\":[$GROUP],\"contacts\":[{\"type\":\"MOBILE\",\"label\":\"همراه\",\"value\":\"09120000001\",\"isPrimary\":true}],\"addresses\":[{\"type\":\"DELIVERY\",\"title\":\"انبار مشتری\",\"address\":\"تهران، نشانی تست\",\"postalCode\":\"1111111111\",\"isPrimary\":true}],\"customerProfile\":{\"creditLimit\":500000000,\"paymentTermsDays\":30}}" >/tmp/party-update.json
+          curl -fsS "$BASE/api/iran/masterdata/parties/$PARTY/card" "${H[@]}" | tee /tmp/party-card.json | grep -q 'مشتریان ویژه'
+
+          PRODUCT=$(curl -fsS -X POST "$BASE/api/iran/products" "${H[@]}" -d '{"sku":"P18-001","name":"کالای تست فاز ۱۸","unit":"کیلوگرم","salePrice":1500000,"purchasePrice":1000000,"vatStatus":"STANDARD","defaultVatRate":10,"productType":"GOODS"}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
+          curl -fsS -X POST "$BASE/api/iran/masterdata/product-groups" "${H[@]}" -d '{"code":"FROZEN","title":"منجمد"}' >/tmp/product-group.json
+          curl -fsS -X PUT "$BASE/api/iran/catalog/products/$PRODUCT/media" "${H[@]}" -d '{"storageRef":"https://example.invalid/product-test.jpg","altText":"تصویر کالای تست","isPrimary":true}' >/tmp/media.json
+          curl -fsS "$BASE/api/iran/catalog/products?q=P18-001" "${H[@]}" | grep -q 'product-test.jpg'
+
+          PL=$(curl -fsS -X POST "$BASE/api/iran/price-lists" "${H[@]}" -d "{\"title\":\"لیست قیمت تست\",\"status\":\"ACTIVE\",\"audience\":\"WHOLESALE\",\"lines\":[{\"productId\":$PRODUCT,\"unitPrice\":1550000,\"isFeatured\":true}]}" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
+          curl -fsS "$BASE/api/iran/price-lists/$PL/catalog" "${H[@]}" | grep -q 'کالای تست فاز ۱۸'
+
+          INV=$(curl -fsS -X POST "$BASE/api/iran/sales-invoices" "${H[@]}" -d "{\"customerPartyId\":$PARTY,\"invoiceClassification\":\"NON_OFFICIAL\",\"settlementType\":\"CASH\",\"lines\":[{\"productId\":$PRODUCT,\"qty\":2,\"unitPrice\":1500000}]}" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
+          curl -fsS "$BASE/api/iran/print/sales-invoices/$INV" "${H[@]}" | tee /tmp/invoice-print.json | grep -q 'کالای تست فاز ۱۸'
+
+          WB=$(curl -fsS -X POST "$BASE/api/iran/logistics/waybills" "${H[@]}" -d "{\"receiverPartyId\":$PARTY,\"salesInvoiceId\":$INV,\"originAddress\":\"انبار مرکزی\",\"destinationAddress\":\"تهران، نشانی تست\",\"totalPackages\":2,\"grossWeight\":22.5,\"netWeight\":20,\"freightAmount\":500000,\"lines\":[{\"productId\":$PRODUCT,\"description\":\"کالای تست فاز ۱۸\",\"unit\":\"کیلوگرم\",\"packageCount\":2,\"quantity\":20,\"grossWeight\":22.5,\"netWeight\":20,\"declaredValue\":30000000}]}" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
+          curl -fsS "$BASE/api/iran/print/waybills/$WB" "${H[@]}" | tee /tmp/waybill-print.json | grep -q 'کالای تست فاز ۱۸'
+
+          curl -fsS -X POST "$BASE/api/iran/print-profiles" "${H[@]}" -d '{"documentType":"SALES_INVOICE","title":"فاکتور رسمی A4","paperSize":"A4","orientation":"PORTRAIT","isDefault":true,"template":{"showLogo":true,"showBank":true}}' >/tmp/profile.json
+          curl -fsS "$BASE/api/iran/print-profiles?documentType=SALES_INVOICE" "${H[@]}" | grep -q 'فاکتور رسمی A4'
+
+          curl -fsS "$BASE/api/iran/reports/item-profit-detail?from=2026-01-01&to=2027-12-31" "${H[@]}" >/tmp/profit.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const party=JSON.parse(fs.readFileSync('/tmp/party-card.json','utf8'));
+          if(!party.contacts?.length||!party.addresses?.length) throw new Error('party contact/address detail missing');
+          const inv=JSON.parse(fs.readFileSync('/tmp/invoice-print.json','utf8'));
+          if(inv.lines.length!==1||inv.invoice.customer_name!=='مشتری تست چاپ') throw new Error('invoice print payload incomplete');
+          const wb=JSON.parse(fs.readFileSync('/tmp/waybill-print.json','utf8'));
+          if(wb.lines.length!==1||Number(wb.waybill.net_weight)!==20) throw new Error('waybill print payload incomplete');
+          const p=JSON.parse(fs.readFileSync('/tmp/profit.json','utf8'));
+          if(!Array.isArray(p.rows)) throw new Error('profit detail report invalid');
+          console.log('Enterprise 1.8 E2E PASS');
+          NODE
+      - name: Web loader smoke
+        run: |
+          grep -q "load('/phase18-ui.js')" apps/web/fa-overlay.js
+          grep -q 'لیست قیمت محصولات' apps/web/phase18-ui.js
+          grep -q 'بارنامه و لجستیک' apps/web/phase18-ui.js
+          grep -q 'فاکتور و چاپ' apps/web/phase18-ui.js
+      - name: Diagnostics
+        if: always()
+        run: |
+          echo '--- server log ---'
+          tail -n 250 /tmp/tarazpad-phase18.log || true
