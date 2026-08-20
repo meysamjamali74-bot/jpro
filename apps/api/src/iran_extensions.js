@@ -1,3 +1,5 @@
+import { registerPrintMasterV8Routes } from './print_master_v8.js';
+import { registerBankMasterV8Routes } from './bank_master_v8.js';
 import { registerCommercialMasterV8Routes } from './commercial_master_v8.js';
 import { registerStatementFormulaControlsV7 } from './statement_formula_controls_v7.js';
 import { registerComplianceFinalV7 } from './compliance_final_v7.js';
@@ -58,6 +60,8 @@ export function registerIranExtensionRoutes(app){
 
   // Enterprise 1.8 commercial master data, price lists, logistics and printing.
   registerCommercialMasterV8Routes(app);
+  registerBankMasterV8Routes(app);
+  registerPrintMasterV8Routes(app);
 
   // Enterprise 1.7 authoritative route owners with structural formula validation.
   registerFinanceReportsFinalV7(app);
