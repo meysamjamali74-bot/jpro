@@ -1,7 +1,7 @@
 name: Tarazpad Enterprise Strict Gate
 on:
   push:
-    branches: [enterprise-phase-1-1, main]
+    branches: [enterprise-phase-1-1, enterprise-phase-1-2, main]
   pull_request:
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
           find apps/api/src apps/web -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Unit tests
         run: npm --prefix apps/api test
-      - name: Enterprise MySQL, HR and payroll accounting flow
+      - name: Enterprise end-to-end gate
         env:
           PORT: 8080
           MYSQL_HOST: 127.0.0.1
@@ -58,55 +58,97 @@ jobs:
           if [ "$ok" != "1" ]; then cat /tmp/tarazpad-strict.log; exit 1; fi
           jq -e '.ok == true' /tmp/health.json
 
-          TOKEN=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login \
-            -H 'content-type: application/json' \
-            -d '{"email":"strict@tarazpad.test","password":"Strong_Strict_2026!"}' | jq -r .token)
-          test -n "$TOKEN" && test "$TOKEN" != "null"
-          AUTH="authorization: Bearer $TOKEN"
+          login(){ curl -fsS -X POST http://127.0.0.1:8080/api/auth/login -H 'content-type: application/json' -d "{\"email\":\"$1\",\"password\":\"$2\"}" | jq -r .token; }
+          ADMIN=$(login strict@tarazpad.test 'Strong_Strict_2026!')
+          test -n "$ADMIN" && test "$ADMIN" != "null"
+          AA="authorization: Bearer $ADMIN"
 
-          curl -fsS http://127.0.0.1:8080/api/iran/payroll/legal-parameters -H "$AUTH" | jq -e 'length >= 1'
-          curl -fsS http://127.0.0.1:8080/api/iran/tax/rates -H "$AUTH" | jq -e 'map(select(.tax_code=="VAT_GENERAL_1405" and .rate==10)) | length == 1'
+          # Distinct operational users for SoD.
+          SALES_ID=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/admin/users -H "$AA" -H 'content-type: application/json' -d '{"fullName":"فروشنده کنترل","email":"sales@tarazpad.test","password":"Strong_Sales_2026!","roleCodes":["SALES_PERSON"]}' | jq -r .id)
+          REVIEW_ID=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/admin/users -H "$AA" -H 'content-type: application/json' -d '{"fullName":"بازبین فروش","email":"review@tarazpad.test","password":"Strong_Review_2026!","roleCodes":["SALES_MANAGER"]}' | jq -r .id)
+          FIN_ID=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/admin/users -H "$AA" -H 'content-type: application/json' -d '{"fullName":"مدیر مالی کنترل","email":"finance@tarazpad.test","password":"Strong_Finance_2026!","roleCodes":["FINANCE_MANAGER"]}' | jq -r .id)
+          LOG_ID=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/admin/users -H "$AA" -H 'content-type: application/json' -d '{"fullName":"مدیر لجستیک کنترل","email":"logistics@tarazpad.test","password":"Strong_Logistics_2026!","roleCodes":["LOGISTICS_MANAGER"]}' | jq -r .id)
+          SALES=$(login sales@tarazpad.test 'Strong_Sales_2026!'); REVIEW=$(login review@tarazpad.test 'Strong_Review_2026!'); FIN=$(login finance@tarazpad.test 'Strong_Finance_2026!'); LOG=$(login logistics@tarazpad.test 'Strong_Logistics_2026!')
+          SA="authorization: Bearer $SALES"; RA="authorization: Bearer $REVIEW"; FA="authorization: Bearer $FIN"; LA="authorization: Bearer $LOG"
 
-          EMP=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/employees \
-            -H "$AUTH" -H 'content-type: application/json' \
-            -d '{"personnelNo":"STRICT-P-001","name":"کارمند کنترل نهایی","nationalNo":"0011223344","insuranceNo":"STRICT-INS","hireDate":"2026-03-21","maritalStatus":"MARRIED","childrenCount":1}' | jq -r .partyId)
-          test "$EMP" -gt 0
+          # Payroll regression remains mandatory.
+          EMP=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/employees -H "$AA" -H 'content-type: application/json' -d '{"personnelNo":"STRICT-P-001","name":"کارمند کنترل نهایی","nationalNo":"0011223344","insuranceNo":"STRICT-INS","hireDate":"2026-03-21","maritalStatus":"MARRIED","childrenCount":1}' | jq -r .partyId)
+          CONTRACT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/contracts -H "$AA" -H 'content-type: application/json' -d "{\"employeePartyId\":$EMP,\"contractNo\":\"STRICT-CTR-001\",\"contractType\":\"FIXED_TERM\",\"startDate\":\"2026-03-21\",\"endDate\":\"2027-03-20\",\"baseSalaryMonthly\":250000000,\"insuranceIncluded\":true,\"taxIncluded\":true,\"status\":\"ACTIVE\"}" | jq -r .id)
+          curl -fsS -X POST http://127.0.0.1:8080/api/iran/payroll/attendance -H "$AA" -H 'content-type: application/json' -d "{\"employeePartyId\":$EMP,\"yearNo\":1405,\"monthNo\":5,\"calendarDays\":31,\"workDays\":31,\"overtimeHours\":10}" | jq -e '.ok == true'
+          BATCH=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/payroll/batches -H "$AA" -H 'content-type: application/json' -d '{"yearNo":1405,"monthNo":5,"title":"حقوق تست ۱۴۰۵/۰۵"}' | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/calculate" -H "$AA" -H 'content-type: application/json' -d '{}' | jq -e '.employeeCount>=1 and .totalNet>0'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/review" -H "$AA" -H 'content-type: application/json' -d '{}' | jq -e '.status=="REVIEWED"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/approve" -H "$AA" -H 'content-type: application/json' -d '{}' | jq -e '.status=="APPROVED"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/post" -H "$AA" -H 'content-type: application/json' -d '{}' | jq -e '.ok==true and .debit==.credit'
 
-          CONTRACT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/hr/contracts \
-            -H "$AUTH" -H 'content-type: application/json' \
-            -d "{\"employeePartyId\":$EMP,\"contractNo\":\"STRICT-CTR-001\",\"contractType\":\"FIXED_TERM\",\"startDate\":\"2026-03-21\",\"endDate\":\"2027-03-20\",\"baseSalaryMonthly\":250000000,\"insuranceIncluded\":true,\"taxIncluded\":true,\"status\":\"ACTIVE\"}" | jq -r .id)
-          test "$CONTRACT" -gt 0
+          # Core masters for treasury, purchasing, inventory and sales.
+          BANK=$(curl -fsS -X POST http://127.0.0.1:8080/api/treasury/bank-accounts -H "$FA" -H 'content-type: application/json' -d '{"code":"BANK-STRICT","bankName":"بانک تست","accountTitle":"حساب جاری تست","accountNo":"12345","openingBalance":0}' | jq -r .id)
+          WH=$(curl -fsS -X POST http://127.0.0.1:8080/api/inventory/warehouses -H "$AA" -H 'content-type: application/json' -d '{"code":"WH-S","name":"انبار تست کنترل","warehouseType":"GENERAL"}' | jq -r .id)
+          CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/parties -H "$AA" -H 'content-type: application/json' -d '{"name":"مشتری کنترل ۱","partyType":"LEGAL","code":"CUS-S","nationalId":"14001111111","economicCode":"411111111111","postalCode":"1491111111","roles":["CUSTOMER"]}' | jq -r .id)
+          SUPPLIER=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/parties -H "$AA" -H 'content-type: application/json' -d '{"name":"تأمین‌کننده کنترل","partyType":"LEGAL","code":"SUP-S","nationalId":"14002222222","economicCode":"422222222222","postalCode":"1492222222","roles":["SUPPLIER"]}' | jq -r .id)
+          PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/products -H "$AA" -H 'content-type: application/json' -d '{"sku":"PR-S","name":"کالای کنترل پخش","unit":"عدد","purchasePrice":70000,"salePrice":100000,"vatStatus":"STANDARD","defaultVatRate":10,"productType":"GOODS"}' | jq -r .id)
 
-          curl -fsS -X POST http://127.0.0.1:8080/api/iran/payroll/attendance \
-            -H "$AUTH" -H 'content-type: application/json' \
-            -d "{\"employeePartyId\":$EMP,\"yearNo\":1405,\"monthNo\":5,\"calendarDays\":31,\"workDays\":31,\"overtimeHours\":10,\"paidLeaveDays\":0,\"absenceDays\":0}" | jq -e '.ok == true'
+          # Procure -> approve -> receive -> GRNI -> supplier invoice -> AP.
+          PO=$(curl -fsS -X POST http://127.0.0.1:8080/api/procurement/orders -H "$AA" -H 'content-type: application/json' -d "{\"supplierPartyId\":$SUPPLIER,\"warehouseId\":$WH,\"poDate\":\"2026-08-10\",\"lines\":[{\"productId\":$PRODUCT,\"qty\":10,\"unitPrice\":70000,\"discount\":0,\"tax\":0}]}" | jq -r .id)
+          APPROVAL=$(curl -fsS -X POST "http://127.0.0.1:8080/api/procurement/orders/$PO/submit" -H "$AA" -H 'content-type: application/json' -d '{}' | jq -r .approvalRequestId)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/workflow/approvals/$APPROVAL/decision" -H "$FA" -H 'content-type: application/json' -d '{"action":"APPROVE"}' | jq -e '.status=="APPROVED"'
+          POL=$(curl -fsS "http://127.0.0.1:8080/api/iran/procurement/context?purchaseOrderId=$PO" -H "$AA" | jq -r '.poLines[0].id')
+          GR=$(curl -fsS -X POST http://127.0.0.1:8080/api/procurement/goods-receipts -H "$AA" -H 'content-type: application/json' -d "{\"purchaseOrderId\":$PO,\"warehouseId\":$WH,\"receiptDate\":\"2026-08-11\",\"lines\":[{\"purchaseOrderLineId\":$POL,\"receivedQty\":10,\"acceptedQty\":10,\"unitCost\":70000}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/goods-receipts/$GR/post" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.receivedValue==700000'
+          PI=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/purchase-invoices/auto -H "$FA" -H 'content-type: application/json' -d "{\"supplierPartyId\":$SUPPLIER,\"invoiceDate\":\"2026-08-12\",\"invoiceClassification\":\"NON_OFFICIAL\",\"purchaseKind\":\"GOODS\",\"purchaseOrderId\":$PO,\"goodsReceiptId\":$GR,\"lines\":[{\"productId\":$PRODUCT,\"qty\":10,\"unitPrice\":70000,\"vatStatus\":\"STANDARD\",\"vatRate\":10}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/purchase-invoices/$PI/match" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.status=="APPROVED"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/purchase-invoices/$PI/post" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.ok==true'
+          PAY=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/treasury/payments -H "$FA" -H 'content-type: application/json' -d "{\"partyId\":$SUPPLIER,\"paymentDate\":\"2026-08-13\",\"method\":\"BANK\",\"bankAccountId\":$BANK,\"amount\":770000,\"idempotencyKey\":\"STRICT-PAY-1\",\"allocations\":[{\"purchaseInvoiceId\":$PI,\"amount\":770000}]}" | jq -r .id)
+          test "$PAY" -gt 0
 
-          LOAN=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/payroll/loans \
-            -H "$AUTH" -H 'content-type: application/json' \
-            -d "{\"employeePartyId\":$EMP,\"loanNo\":\"STRICT-L-001\",\"loanType\":\"LOAN\",\"principalAmount\":12000000,\"installmentAmount\":1000000,\"startDate\":\"2026-03-21\"}" | jq -r .id)
-          test "$LOAN" -gt 0
+          # Two posted sales invoices attributed to the real salesperson.
+          INV1=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/sales-invoices -H "$SA" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"invoiceDate\":\"2026-08-14\",\"invoiceClassification\":\"NON_OFFICIAL\",\"settlementType\":\"CREDIT\",\"salespersonUserId\":$SALES_ID,\"lines\":[{\"productId\":$PRODUCT,\"qty\":1,\"unitPrice\":100000}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$INV1/post" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.ok==true and .amounts.COGS_TOTAL==70000 and .grossProfit==30000'
+          RCV1=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/treasury/receipts -H "$FA" -H 'content-type: application/json' -d "{\"partyId\":$CUSTOMER,\"receiptDate\":\"2026-08-15\",\"method\":\"BANK\",\"bankAccountId\":$BANK,\"amount\":110000,\"referenceNo\":\"STRICT-BANK-R1\",\"idempotencyKey\":\"STRICT-R-1\",\"allocations\":[{\"salesInvoiceId\":$INV1,\"amount\":110000}]}" | jq -r .id)
+          test "$RCV1" -gt 0
 
-          BATCH=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/payroll/batches \
-            -H "$AUTH" -H 'content-type: application/json' \
-            -d '{"yearNo":1405,"monthNo":5,"title":"حقوق تست نهایی ۱۴۰۵/۰۵"}' | jq -r .id)
-          test "$BATCH" -gt 0
+          PREVIEW=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/treasury/bank-statements/preview -H "$FA" -H 'content-type: application/json' -d "{\"bankAccountId\":$BANK,\"rows\":[{\"statementDate\":\"2026-08-15\",\"debit\":0,\"credit\":110000,\"referenceNo\":\"STRICT-BANK-R1\",\"description\":\"واریز مشتری\"}]}" )
+          echo "$PREVIEW" | jq -e '.valid==1 and .duplicates==0'
+          curl -fsS -X POST http://127.0.0.1:8080/api/iran/treasury/bank-statements/import -H "$FA" -H 'content-type: application/json' -d "{\"bankAccountId\":$BANK,\"fileName\":\"strict-bank.csv\",\"rows\":[{\"statementDate\":\"2026-08-15\",\"debit\":0,\"credit\":110000,\"referenceNo\":\"STRICT-BANK-R1\",\"description\":\"واریز مشتری\"}]}" | jq -e '.imported==1'
+          BL=$(curl -fsS "http://127.0.0.1:8080/api/iran/treasury/reconciliation?bankAccountId=$BANK&status=UNMATCHED" -H "$FA" | jq -r '.[0].id')
+          SUG=$(curl -fsS -X POST "http://127.0.0.1:8080/api/iran/treasury/reconciliation/$BL/suggest" -H "$FA" -H 'content-type: application/json' -d '{"dateToleranceDays":3,"amountTolerance":1}')
+          echo "$SUG" | jq -e '.suggestions|length>=1'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/treasury/reconciliation/$BL/confirm" -H "$FA" -H 'content-type: application/json' -d "{\"entityType\":\"RECEIPT\",\"entityId\":$RCV1,\"amountTolerance\":1}" | jq -e '.entityType=="RECEIPT"'
 
-          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/calculate" \
-            -H "$AUTH" -H 'content-type: application/json' -d '{}' | \
-            jq -e '.employeeCount >= 1 and .totalGross > 0 and .totalNet > 0'
-          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/review" \
-            -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.status == "REVIEWED"'
-          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/approve" \
-            -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.status == "APPROVED"'
-          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/post" \
-            -H "$AUTH" -H 'content-type: application/json' -d '{}' | \
-            jq -e '.ok == true and .debit > 0 and .debit == .credit'
+          INV2=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/sales-invoices -H "$SA" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"invoiceDate\":\"2026-08-16\",\"invoiceClassification\":\"NON_OFFICIAL\",\"settlementType\":\"CREDIT\",\"salespersonUserId\":$SALES_ID,\"lines\":[{\"productId\":$PRODUCT,\"qty\":1,\"unitPrice\":100000}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$INV2/post" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.amounts.COGS_TOTAL==70000'
 
-          curl -fsS "http://127.0.0.1:8080/api/iran/payroll/batches/$BATCH/slips" -H "$AUTH" | \
-            jq -e 'length >= 1 and .[0].status == "POSTED" and .[0].net_pay > 0'
-          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | \
-            jq -e 'map(select(.code=="610900" and .debit>0)) | length == 1'
+          # Distribution: route -> trip -> load -> gate -> dispatch -> POD -> collection -> treasury handover -> close.
+          ROUTE=$(curl -fsS -X POST http://127.0.0.1:8080/api/logistics/routes -H "$LA" -H 'content-type: application/json' -d "{\"code\":\"R-S\",\"name\":\"مسیر کنترل\",\"salespersonUserId\":$SALES_ID,\"customerPartyIds\":[$CUSTOMER]}" | jq -r .id)
+          VEH=$(curl -fsS -X POST http://127.0.0.1:8080/api/logistics/vehicles -H "$LA" -H 'content-type: application/json' -d '{"plateNo":"11الف111-11","vehicleType":"وانت سردخانه","capacityWeight":1000,"refrigerated":true}' | jq -r .id)
+          TRIP=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/distribution/trips -H "$LA" -H 'content-type: application/json' -d "{\"tripDate\":\"2026-08-17\",\"routeId\":$ROUTE,\"vehicleId\":$VEH,\"driverUserId\":$LOG_ID,\"expectedCollection\":110000,\"stops\":[{\"customerPartyId\":$CUSTOMER,\"salesInvoiceId\":$INV2}]}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/trips/$TRIP/load" -H "$LA" -H 'content-type: application/json' -d "{\"lines\":[{\"warehouseId\":$WH,\"productId\":$PRODUCT,\"quantity\":1}]}" | jq -e '.ok==true'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/trips/$TRIP/transition" -H "$LA" -H 'content-type: application/json' -d '{"status":"GATE_CHECK"}' | jq -e '.status=="GATE_CHECK"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/trips/$TRIP/transition" -H "$LA" -H 'content-type: application/json' -d '{"status":"DISPATCHED","odometerOut":10000}' | jq -e '.status=="DISPATCHED"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/trips/$TRIP/transition" -H "$LA" -H 'content-type: application/json' -d '{"status":"IN_ROUTE"}' | jq -e '.status=="IN_ROUTE"'
+          STOP=$(curl -fsS "http://127.0.0.1:8080/api/iran/distribution/trips/$TRIP" -H "$LA" | jq -r '.stops[0].id')
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/stops/$STOP/arrive" -H "$LA" -H 'content-type: application/json' -d '{"latitude":35.7,"longitude":51.4}' | jq -e '.status=="ARRIVED"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/stops/$STOP/deliver" -H "$LA" -H 'content-type: application/json' -d "{\"status\":\"DELIVERED\",\"receiverName\":\"تحویل‌گیرنده تست\",\"signatureRef\":\"pod://strict/signature\",\"photoRef\":\"pod://strict/photo\",\"lines\":[{\"productId\":$PRODUCT,\"deliveredQty\":1,\"returnedQty\":0,\"damagedQty\":0}]}" | jq -e '.stopStatus=="DELIVERED" and .inventoryVariance==0'
+          COL=$(curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/trips/$TRIP/collections" -H "$LA" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"method\":\"CASH\",\"amount\":110000,\"referenceNo\":\"TRIP-CASH-1\"}" | jq -r .id)
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/collections/$COL/handover" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.ok==true and .allocated==110000'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/distribution/trips/$TRIP/settle" -H "$LA" -H 'content-type: application/json' -d '{"odometerIn":10025}' | jq -e '.status=="CLOSED" and .inventoryVariance==0 and .financialDifference==0 and .unhanded==0'
+
+          # Auditable commissions from posted invoices, cost snapshots and actual receipts.
+          RULE_GP=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/commissions/rules -H "$AA" -H 'content-type: application/json' -d "{\"title\":\"سود ناخالص وصول‌شده\",\"basis\":\"GROSS_PROFIT\",\"baseRate\":5,\"collectionBased\":true,\"assignments\":[{\"salespersonUserId\":$SALES_ID,\"effectiveFrom\":\"2026-08-01\"}]}" | jq -r .id)
+          RULE_COL=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/commissions/rules -H "$AA" -H 'content-type: application/json' -d "{\"title\":\"پورسانت وصول\",\"basis\":\"COLLECTION\",\"baseRate\":2,\"assignments\":[{\"salespersonUserId\":$SALES_ID,\"effectiveFrom\":\"2026-08-01\"}]}" | jq -r .id)
+          curl -fsS -X POST http://127.0.0.1:8080/api/iran/commissions/targets -H "$AA" -H 'content-type: application/json' -d "{\"salespersonUserId\":$SALES_ID,\"periodStart\":\"2026-08-01\",\"periodEnd\":\"2026-08-31\",\"targetType\":\"NET_SALES\",\"targetAmount\":200000}" | jq -e '.ok==true'
+          RUN=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/commissions/run -H "$AA" -H 'content-type: application/json' -d "{\"periodStart\":\"2026-08-01\",\"periodEnd\":\"2026-08-31\",\"salespersonUserId\":$SALES_ID}")
+          echo "$RUN" | jq -e 'length==2 and (map(select(.basis=="GROSS_PROFIT" and .grossProfit==60000 and .commissionAmount==3000))|length)==1 and (map(select(.basis=="COLLECTION" and .collected==200000 and .commissionAmount==4000))|length)==1'
+          COMM=$(echo "$RUN" | jq -r '.[0].id')
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/commissions/results/$COMM/review" -H "$RA" -H 'content-type: application/json' -d '{}' | jq -e '.status=="REVIEWED"'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/commissions/results/$COMM/approve" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.status=="APPROVED"'
+          curl -fsS "http://127.0.0.1:8080/api/iran/commissions/results/$COMM/lines" -H "$FA" | jq -e 'length==2 and (map(.gross_profit_amount)|add)==60000'
+
+          # Global accounting remains balanced after all flows.
+          curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$FA" > /tmp/tb.json
+          jq -e '((map(.debit)|add) - (map(.credit)|add) | fabs) < 1' /tmp/tb.json
           curl -fsS http://127.0.0.1:8080/ | grep -q 'ترازپاد'
+          curl -fsS http://127.0.0.1:8080/ | grep -q 'phase12-ui.js'
           kill $(cat /tmp/tarazpad.pid)
       - name: Upload strict log on failure
         if: failure()

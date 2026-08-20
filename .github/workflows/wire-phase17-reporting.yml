@@ -1,0 +1,25 @@
+name: Wire Tarazpad Enterprise 1.7 Reporting Overrides
+on:
+  push:
+    branches: [enterprise-phase-1-7]
+    paths: ['.github/workflows/wire-phase17-reporting.yml']
+permissions:
+  contents: write
+jobs:
+  wire-reporting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: enterprise-phase-1-7
+      - run: python3 scripts/wire_phase17_reporting.py
+      - name: Validate syntax
+        run: find apps/api/src apps/web -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Commit wiring
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name 'tarazpad-release-bot'
+          git config user.email 'actions@tarazpad.local'
+          git add apps/api/src/iran_extensions.js
+          git commit -m 'Wire Phase 1.7 historical reporting overrides'
+          git push origin HEAD:enterprise-phase-1-7

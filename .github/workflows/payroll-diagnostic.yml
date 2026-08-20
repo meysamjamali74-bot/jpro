@@ -1,0 +1,65 @@
+name: Tarazpad Payroll Diagnostic E2E
+on:
+  push:
+    branches: [enterprise-phase-1-2, main]
+  pull_request:
+
+jobs:
+  payroll-e2e:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_payroll_2026
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: payroll_db_2026
+        ports: [3306:3306]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_payroll_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: apps/api
+        run: npm install
+      - name: Syntax gate
+        run: |
+          set -euo pipefail
+          find apps/api/src apps/web scripts -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+      - name: Start server
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: payroll_db_2026
+          JWT_SECRET: payroll_diagnostic_secret_2026_long_enough
+          TARAZPAD_ADMIN_EMAIL: payroll@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Payroll_2026!
+          TARAZPAD_ADMIN_NAME: Payroll Diagnostic Admin
+        run: |
+          node apps/api/src/server.js > /tmp/payroll-server.log 2>&1 &
+          echo $! >/tmp/tarazpad.pid
+          ok=0
+          for i in {1..60}; do if curl -fsS http://127.0.0.1:8080/api/health >/dev/null; then ok=1; break; fi; sleep 2; done
+          if [ "$ok" != "1" ]; then cat /tmp/payroll-server.log; exit 1; fi
+      - name: Run payroll E2E
+        env:
+          TARAZPAD_URL: http://127.0.0.1:8080
+          TARAZPAD_ADMIN_EMAIL: payroll@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Payroll_2026!
+        run: node scripts/e2e_payroll.mjs 2>&1 | tee /tmp/payroll-e2e.log
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: payroll-diagnostic-logs
+          path: |
+            /tmp/payroll-e2e.log
+            /tmp/payroll-server.log

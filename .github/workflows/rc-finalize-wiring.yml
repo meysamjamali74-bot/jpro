@@ -1,0 +1,36 @@
+name: Tarazpad RC Finalize Runtime Wiring
+on:
+  push:
+    branches: [enterprise-release-candidate-1-7]
+    paths: ['.github/workflows/rc-finalize-wiring.yml']
+permissions:
+  contents: write
+jobs:
+  finalize-wiring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: enterprise-release-candidate-1-7
+          fetch-depth: 0
+      - name: Refresh RC
+        run: git pull --rebase origin enterprise-release-candidate-1-7
+      - name: Apply authoritative 1.7 wiring
+        run: python3 scripts/wire_phase17_v9.py
+      - name: Validate runtime ownership and syntax
+        run: |
+          node --check apps/api/src/iran_extensions.js
+          npm --prefix apps/api install
+          node --test apps/api/test/runtime_route_ownership.test.js
+      - name: Commit finalized runtime
+        run: |
+          if git diff --quiet; then
+            echo 'RC runtime wiring already authoritative.'
+            exit 0
+          fi
+          git config user.name 'tarazpad-release-bot'
+          git config user.email 'actions@tarazpad.local'
+          git add apps/api/src/iran_extensions.js apps/web/fa-overlay.js
+          git commit -m 'Finalize authoritative runtime wiring for RC 1.7'
+          git pull --rebase origin enterprise-release-candidate-1-7
+          git push origin HEAD:enterprise-release-candidate-1-7

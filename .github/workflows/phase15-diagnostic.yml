@@ -1,0 +1,109 @@
+name: Tarazpad Enterprise 1.5 Diagnostic Gate
+on:
+  push:
+    branches: [enterprise-phase-1-5]
+  pull_request:
+
+jobs:
+  phase15-gate:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_p15_2026
+          MYSQL_ROOT_HOST: "%"
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: p15_db_2026
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_p15_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: apps/api
+        run: npm install
+      - name: Static syntax and unit tests
+        run: |
+          set -euo pipefail
+          find apps/api/src apps/api/test apps/web -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+          npm --prefix apps/api test
+      - name: Prepare native MySQL 8.4 client wrappers for backup tests
+        run: |
+          cat >/tmp/tarazpad-mysqldump <<'SH'
+          #!/usr/bin/env bash
+          exec docker run --rm --network host -e MYSQL_PWD="${MYSQL_PWD:-}" mysql:8.4 mysqldump "$@"
+          SH
+          cat >/tmp/tarazpad-mysql <<'SH'
+          #!/usr/bin/env bash
+          exec docker run --rm -i --network host -e MYSQL_PWD="${MYSQL_PWD:-}" mysql:8.4 mysql "$@"
+          SH
+          chmod +x /tmp/tarazpad-mysqldump /tmp/tarazpad-mysql
+          mkdir -p /tmp/tarazpad-backups
+      - name: Start API on fresh MySQL 8.4
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: p15_db_2026
+          MYSQL_ADMIN_USER: root
+          MYSQL_ADMIN_PASSWORD: root_p15_2026
+          MYSQLDUMP_PATH: /tmp/tarazpad-mysqldump
+          MYSQL_CLIENT_PATH: /tmp/tarazpad-mysql
+          TARAZPAD_BACKUP_DIR: /tmp/tarazpad-backups
+          JWT_SECRET: phase15_gate_secret_tarazpad_2026_long_enough
+          TARAZPAD_ADMIN_EMAIL: phase15@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_P15_Admin_2026!
+          TARAZPAD_ADMIN_NAME: مدیر کنترل فاز ۱۵
+        run: |
+          node apps/api/src/server.js >/tmp/tarazpad-phase15.log 2>&1 &
+          echo $! >/tmp/tarazpad-phase15.pid
+          ok=0
+          for i in {1..90}; do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/p15-health.json; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then cat /tmp/tarazpad-phase15.log; exit 1; fi
+          jq -e '.ok == true' /tmp/p15-health.json
+      - name: Enterprise 1.5 full-stack E2E
+        env:
+          TEST_BASE_URL: http://127.0.0.1:8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: p15_db_2026
+          TARAZPAD_ADMIN_EMAIL: phase15@tarazpad.test
+        run: node apps/api/test/phase15_e2e.mjs
+      - name: Verify migration completeness and database invariants
+        env:
+          MYSQL_PWD: p15_db_2026
+        run: |
+          docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -utarazpad tarazpad -N -e "SELECT COUNT(*) FROM schema_migrations; SELECT COUNT(*) FROM inventory_cost_layers; SELECT COUNT(*) FROM restore_tests WHERE status='SUCCESS'; SELECT COUNT(*) FROM consolidation_runs WHERE status='FINAL'; SELECT ABS(COALESCE(SUM(jl.debit-jl.credit),0)) FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE je.company_id=1 AND je.status IN ('POSTED','LOCKED');" >/tmp/p15-invariants.txt
+          cat /tmp/p15-invariants.txt
+          test "$(sed -n '2p' /tmp/p15-invariants.txt)" -ge 1
+          test "$(sed -n '3p' /tmp/p15-invariants.txt)" -ge 1
+          test "$(sed -n '4p' /tmp/p15-invariants.txt)" -ge 1
+          awk 'NR==5 { exit !($1 < 1) }' /tmp/p15-invariants.txt
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/tarazpad-phase15.pid ]; then kill $(cat /tmp/tarazpad-phase15.pid) || true; fi
+      - name: Upload diagnostic artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarazpad-phase15-diagnostics
+          path: |
+            /tmp/tarazpad-phase15.log
+            /tmp/p15-invariants.txt
+            /tmp/tarazpad-backups
+          if-no-files-found: ignore
