@@ -32,6 +32,31 @@ export async function consumeFifo(conn,{companyId,warehouseId,productId,quantity
   const required=n(quantity);
   if(required<=EPS)return{quantity:0,cost:0,unitCost:0,layers:[]};
 
+  // Upgrade compatibility: older installations may already have the legacy
+  // AFTER INSERT trigger. If it consumed this movement, treat those rows as
+  // authoritative and do not consume the same FIFO layers a second time.
+  const [existing]=await conn.execute(`
+    SELECT cost_layer_id layer_id,quantity,unit_cost,cost_amount
+      FROM inventory_cost_layer_consumptions
+     WHERE movement_id=?
+     ORDER BY id
+     FOR UPDATE
+  `,[movementId]);
+  if(existing.length){
+    const existingQty=existing.reduce((s,x)=>s+n(x.quantity),0);
+    const existingCost=existing.reduce((s,x)=>s+n(x.cost_amount),0);
+    if(existingQty+EPS<required){
+      fifoError('مصرف FIFO ثبت‌شده برای این حرکت ناقص است.',{movementId,required,costed:existingQty});
+    }
+    return{
+      quantity:existingQty,
+      cost:Math.round(existingCost*100)/100,
+      unitCost:existingQty?existingCost/existingQty:0,
+      legacyTrigger:true,
+      layers:existing.map(x=>({layerId:x.layer_id,quantity:n(x.quantity),unitCost:n(x.unit_cost),cost:n(x.cost_amount)}))
+    };
+  }
+
   await ensureFifoLayers(conn,companyId,warehouseId,productId);
 
   const [layers]=await conn.execute(`
@@ -85,6 +110,7 @@ export async function consumeFifo(conn,{companyId,warehouseId,productId,quantity
     quantity:required,
     cost:Math.round(totalCost*100)/100,
     unitCost:required?totalCost/required:0,
+    legacyTrigger:false,
     layers:consumed
   };
 }
