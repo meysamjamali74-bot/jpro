@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS sales_fulfillments (
   CONSTRAINT fk_sf_company FOREIGN KEY(company_id) REFERENCES companies(id),
   CONSTRAINT fk_sf_invoice FOREIGN KEY(sales_invoice_id) REFERENCES sales_invoices(id),
   CONSTRAINT fk_sf_warehouse FOREIGN KEY(warehouse_id) REFERENCES warehouses(id),
-  CONSTRAINT fk_sf_trip FOREIGN KEY(distribution_trip_id) REFERENCES distribution_trips(id),
+  CONSTRAINT fk_sf_trip FOREIGN KEY(distribution_trip_id) REFERENCES trips(id),
   CONSTRAINT fk_sf_user FOREIGN KEY(created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
