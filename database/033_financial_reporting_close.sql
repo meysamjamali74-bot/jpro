@@ -164,9 +164,9 @@ CREATE TABLE IF NOT EXISTS financial_report_snapshots (
   source_hash VARCHAR(64) NOT NULL,
   created_by BIGINT UNSIGNED NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY ix_frs_company(company_id,report_type,as_of_date),
-  CONSTRAINT fk_frs_company FOREIGN KEY(company_id) REFERENCES companies(id),
-  CONSTRAINT fk_frs_user FOREIGN KEY(created_by) REFERENCES users(id)
+  KEY ix_frs_reporting_company(company_id,report_type,as_of_date),
+  CONSTRAINT fk_frs_reporting_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_frs_reporting_user FOREIGN KEY(created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 INSERT IGNORE INTO close_checklist_templates(company_id,code,title_fa,check_type,severity,check_code,sort_order)
@@ -186,7 +186,6 @@ SELECT id,'FIXED_ASSET_DEPRECIATION','استهلاک دارایی ثابت دو�
 INSERT IGNORE INTO close_checklist_templates(company_id,code,title_fa,check_type,severity,check_code,sort_order)
 SELECT id,'MANAGEMENT_REVIEW','تأیید مدیر مالی بر گزارش‌های نهایی','MANUAL','BLOCKER',NULL,90 FROM companies;
 
--- Standard mapping defaults for the seeded chart. Companies can refine these later.
 UPDATE accounts SET statement_section='CURRENT_ASSET',cash_flow_activity='CASH' WHERE code IN ('110200','110210','110220');
 UPDATE accounts SET statement_section='CURRENT_ASSET' WHERE code IN ('110100','120500','120900','130100');
 UPDATE accounts SET statement_section='CURRENT_LIABILITY' WHERE code IN ('210500','210700','220100','220900');
