@@ -5,6 +5,7 @@ on:
     paths:
       - 'apps/api/src/masterdata_print_v8.js'
       - 'apps/api/src/masterdata_bank_v8_compat.js'
+      - 'apps/api/src/management_profit_v8.js'
       - 'apps/web/phase18-ui.js'
       - 'database/040_masterdata_print_logistics.sql'
       - 'database/041_bank_masterdata_compatibility.sql'
@@ -27,15 +28,16 @@ jobs:
           s=p.read_text()
           imports=[
             "import { registerMasterDataBankV8Compat } from './masterdata_bank_v8_compat.js';\n",
-            "import { registerMasterDataPrintV8 } from './masterdata_print_v8.js';\n"
+            "import { registerMasterDataPrintV8 } from './masterdata_print_v8.js';\n",
+            "import { registerManagementProfitV8 } from './management_profit_v8.js';\n"
           ]
           anchor="import { registerIranRoutes } from './iran.js';\n"
           if anchor not in s: raise SystemExit('server import anchor missing')
           for imp in imports:
             if imp not in s: s=s.replace(anchor,anchor+imp)
-          # remove duplicate registrations if a previous partial wiring happened
-          s=s.replace('registerMasterDataBankV8Compat(app);\n','').replace('registerMasterDataPrintV8(app);\n','')
-          reg='registerMasterDataBankV8Compat(app);\nregisterMasterDataPrintV8(app);\n'
+          for call in ['registerMasterDataBankV8Compat(app);\n','registerMasterDataPrintV8(app);\n','registerManagementProfitV8(app);\n']:
+            s=s.replace(call,'')
+          reg='registerMasterDataBankV8Compat(app);\nregisterMasterDataPrintV8(app);\nregisterManagementProfitV8(app);\n'
           anchor_call='registerIranRoutes(app);\n'
           if anchor_call not in s: raise SystemExit('server registration anchor missing')
           s=s.replace(anchor_call,anchor_call+reg)
@@ -51,6 +53,7 @@ jobs:
           PY
           node --check apps/api/src/masterdata_bank_v8_compat.js
           node --check apps/api/src/masterdata_print_v8.js
+          node --check apps/api/src/management_profit_v8.js
           node --check apps/web/phase18-ui.js
           node --check apps/api/src/server.js
           node --check apps/web/fa-overlay.js
@@ -60,6 +63,6 @@ jobs:
           git config user.name 'tarazpad-release-bot'
           git config user.email 'actions@tarazpad.local'
           git add apps/api/src/server.js apps/web/fa-overlay.js
-          git commit -m 'Wire Enterprise 1.8 rich master data and print modules'
+          git commit -m 'Wire Enterprise 1.8 managerial profitability module'
           git pull --rebase origin enterprise-phase-1-8-masterdata-print
           git push origin HEAD:enterprise-phase-1-8-masterdata-print
