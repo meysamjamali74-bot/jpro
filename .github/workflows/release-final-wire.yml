@@ -17,7 +17,7 @@ jobs:
         run: |
           git fetch origin enterprise-phase-1-8-final-details
           git show origin/enterprise-phase-1-8-final-details:apps/web/phase18-final-ui.js > apps/web/phase18-final-ui.js
-      - name: Wire API and Persian UI
+      - name: Wire API UI and repair legacy schema reference
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -44,8 +44,15 @@ jobs:
             if marker not in x: raise SystemExit('phase18 UI load marker not found')
             x=x.replace(marker,marker+"load('/phase18-final-ui.js');",1)
           f.write_text(x)
+
+          m=Path('database/028_platform_phase15.sql')
+          z=m.read_text()
+          old='REFERENCES distribution_trips(id)'
+          if old in z:
+            z=z.replace(old,'REFERENCES trips(id)')
+          m.write_text(z)
           PY
-      - name: Syntax checks
+      - name: Syntax and privileged DDL inventory
         run: |
           node --check apps/api/src/bank_master_v8.js
           node --check apps/api/src/print_master_v8.js
@@ -54,11 +61,13 @@ jobs:
           node --check apps/api/src/iran_extensions.js
           node --check apps/web/phase18-final-ui.js
           node --check apps/web/fa-overlay.js
+          echo 'Privileged migration objects still present:'
+          grep -RniE '^[[:space:]]*CREATE[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION|EVENT)' database --include='*.sql' || true
       - name: Commit final wiring
         run: |
           if git diff --quiet; then echo 'Release already wired'; exit 0; fi
           git config user.name tarazpad-release-bot
           git config user.email actions@tarazpad.local
-          git add apps/api/src/iran_extensions.js apps/web/fa-overlay.js apps/web/phase18-final-ui.js
-          git commit -m 'Wire final Enterprise 1.8 bank and printing UI'
+          git add apps/api/src/iran_extensions.js apps/web/fa-overlay.js apps/web/phase18-final-ui.js database/028_platform_phase15.sql
+          git commit -m 'Wire final Enterprise 1.8 UI and repair trip schema reference'
           git push origin HEAD:enterprise-phase-1-8-release
