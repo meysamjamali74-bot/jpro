@@ -4,8 +4,10 @@ on:
     branches: [enterprise-phase-1-8-masterdata-print]
     paths:
       - 'apps/api/src/masterdata_print_v8.js'
+      - 'apps/api/src/masterdata_bank_v8_compat.js'
       - 'apps/web/phase18-ui.js'
       - 'database/040_masterdata_print_logistics.sql'
+      - 'database/041_bank_masterdata_compatibility.sql'
       - '.github/workflows/phase18-wire.yml'
 permissions:
   contents: write
@@ -23,16 +25,20 @@ jobs:
           from pathlib import Path
           p=Path('apps/api/src/server.js')
           s=p.read_text()
-          imp="import { registerMasterDataPrintV8 } from './masterdata_print_v8.js';\n"
-          if imp not in s:
-              anchor="import { registerIranRoutes } from './iran.js';\n"
-              if anchor not in s: raise SystemExit('server import anchor missing')
-              s=s.replace(anchor,anchor+imp)
-          call='registerMasterDataPrintV8(app);\n'
-          if call not in s:
-              anchor='registerIranRoutes(app);\n'
-              if anchor not in s: raise SystemExit('server registration anchor missing')
-              s=s.replace(anchor,anchor+call)
+          imports=[
+            "import { registerMasterDataBankV8Compat } from './masterdata_bank_v8_compat.js';\n",
+            "import { registerMasterDataPrintV8 } from './masterdata_print_v8.js';\n"
+          ]
+          anchor="import { registerIranRoutes } from './iran.js';\n"
+          if anchor not in s: raise SystemExit('server import anchor missing')
+          for imp in imports:
+            if imp not in s: s=s.replace(anchor,anchor+imp)
+          # remove duplicate registrations if a previous partial wiring happened
+          s=s.replace('registerMasterDataBankV8Compat(app);\n','').replace('registerMasterDataPrintV8(app);\n','')
+          reg='registerMasterDataBankV8Compat(app);\nregisterMasterDataPrintV8(app);\n'
+          anchor_call='registerIranRoutes(app);\n'
+          if anchor_call not in s: raise SystemExit('server registration anchor missing')
+          s=s.replace(anchor_call,anchor_call+reg)
           p.write_text(s)
 
           p=Path('apps/web/fa-overlay.js')
@@ -43,6 +49,7 @@ jobs:
               s=s.replace(anchor,"load('/phase17-ui.js');load('/phase18-ui.js');})();")
           p.write_text(s)
           PY
+          node --check apps/api/src/masterdata_bank_v8_compat.js
           node --check apps/api/src/masterdata_print_v8.js
           node --check apps/web/phase18-ui.js
           node --check apps/api/src/server.js
@@ -53,5 +60,6 @@ jobs:
           git config user.name 'tarazpad-release-bot'
           git config user.email 'actions@tarazpad.local'
           git add apps/api/src/server.js apps/web/fa-overlay.js
-          git commit -m 'Wire Enterprise 1.8 master data and print modules'
+          git commit -m 'Wire Enterprise 1.8 rich master data and print modules'
+          git pull --rebase origin enterprise-phase-1-8-masterdata-print
           git push origin HEAD:enterprise-phase-1-8-masterdata-print
