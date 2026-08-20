@@ -1,3 +1,4 @@
+import { registerOperationalDocumentsV8Routes } from './operational_documents_v8.js';
 import { registerStatementFormulaControlsV7 } from './statement_formula_controls_v7.js';
 import { registerComplianceFinalV7 } from './compliance_final_v7.js';
 import { registerYearEndFinalV7 } from './year_end_final_v7.js';
@@ -55,6 +56,9 @@ async function audit(req,action,type,id,payload){try{await pool.execute(`INSERT 
 export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
 
+  // Enterprise 1.8 operational detail, print and master-data routes.
+  registerOperationalDocumentsV8Routes(app);
+
   // Enterprise 1.7 authoritative route owners with structural formula validation.
   registerFinanceReportsFinalV7(app);
   registerYearEndFinalV7(app);
@@ -63,30 +67,6 @@ export function registerIranExtensionRoutes(app){
   registerStatementDesignerV7Routes(app);
   registerComplianceFinalV7(app);
   registerComplianceV7Routes(app);
-
-  // Enterprise 1.7 authoritative route owners with structural formula validation.
-
-  // Enterprise 1.7 authoritative route owners.
-
-  // Enterprise 1.7 authoritative route owners.
-
-  // Enterprise 1.7 authoritative financial/reporting control order.
-
-  // Enterprise 1.7 final control order with compliance source integrity.
-
-  // Enterprise 1.7 final control order with compliance source integrity.
-
-  // Enterprise 1.7 unified statement and close control order.
-
-  // Enterprise 1.7 final deterministic control order.
-
-  // Enterprise 1.7 deterministic control order.
-
-
-  // Historical performance statements must exclude system year-end closing entries.
-
-
-  // Enterprise 1.7: year-end, financial statement designer and statutory compliance.
 
   // Financial reporting overrides precede the underlying reporting routes.
   registerFinanceReportingOverridesV6(app);
