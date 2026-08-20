@@ -1,3 +1,4 @@
+import { registerCommercialCompatV8Routes } from './commercial_party_service_compat_v8.js';
 import { registerCommercialMasterV8Routes } from './commercial_master_v8.js';
 import { registerStatementFormulaControlsV7 } from './statement_formula_controls_v7.js';
 import { registerComplianceFinalV7 } from './compliance_final_v7.js';
@@ -57,6 +58,7 @@ export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
 
   // Enterprise 1.8 commercial master data, price lists, logistics and printing.
+  registerCommercialCompatV8Routes(app);
   registerCommercialMasterV8Routes(app);
 
   // Enterprise 1.7 authoritative route owners with structural formula validation.
