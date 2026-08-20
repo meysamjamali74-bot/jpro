@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS fiscal_years (
   closed_by BIGINT UNSIGNED NULL,
   closed_at DATETIME NULL,
   UNIQUE KEY uq_fy_company_year(company_id,year_no),
-  CONSTRAINT fk_fy_company FOREIGN KEY(company_id) REFERENCES companies(id),
-  CONSTRAINT fk_fy_closer FOREIGN KEY(closed_by) REFERENCES users(id),
+  CONSTRAINT fk_fy_reporting_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_fy_reporting_closer FOREIGN KEY(closed_by) REFERENCES users(id),
   CHECK(end_date>=start_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
