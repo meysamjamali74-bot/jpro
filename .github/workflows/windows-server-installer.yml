@@ -43,6 +43,8 @@ jobs:
           Copy-Item 'apps/web/*' "$stage/app/apps/web" -Recurse -Force
           Copy-Item 'database/*' "$stage/app/database" -Recurse -Force
           Copy-Item 'installer/windows-server/Install-TarazpadServer.ps1' "$stage/Install-TarazpadServer.ps1" -Force
+          Copy-Item 'installer/windows-server/Install-DatabaseGuards.ps1' "$stage/Install-DatabaseGuards.ps1" -Force
+          Copy-Item 'installer/windows-server/HardClose-DatabaseGuards.sql' "$stage/HardClose-DatabaseGuards.sql" -Force
           Copy-Item (Get-Command node.exe).Source "$stage/runtime/node.exe" -Force
           "Tarazpad native web server payload $(Get-Date -Format o)" | Set-Content "$stage/BUILD-INFO.txt"
 
@@ -80,12 +82,16 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Install-TarazpadServer.ps1' -Raw))
+          $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Install-DatabaseGuards.ps1' -Raw))
           $null=[scriptblock]::Create((Get-Content 'installer/windows-server/CI-TestNativeInstaller.ps1' -Raw))
+          if(!(Select-String -Path 'installer/windows-server/HardClose-DatabaseGuards.sql' -Pattern 'trg_journal_line_hard_close_delete' -Quiet)){throw 'Hard-close DB guard SQL is incomplete.'}
           node --check apps/api/src/server.js
           node --check apps/api/src/db.js
+          node --check apps/api/src/fiscal_lock_guard_v8.js
           node --check apps/web/app.js
           npm --prefix apps/api test
           if(!(Test-Path 'installer/windows-server/build/staging/app/apps/api/node_modules/mysql2')){throw 'Production dependencies were not staged.'}
+          if(!(Test-Path 'installer/windows-server/build/staging/Install-DatabaseGuards.ps1')){throw 'Database guard installer was not staged.'}
 
       - name: Install NSIS build tool
         shell: powershell
