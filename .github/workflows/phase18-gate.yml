@@ -1,0 +1,115 @@
+name: Phase 18 Enterprise Gate
+on:
+  push:
+    branches: [enterprise-phase-1-8-masterdata-print]
+  pull_request:
+    branches: [enterprise-release-candidate-1-7]
+permissions:
+  contents: read
+jobs:
+  phase18:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: rootpass
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: tarazpadpass
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpass"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: tarazpad
+      DB_USER: tarazpad
+      DB_PASSWORD: tarazpadpass
+      TARAZPAD_ADMIN_EMAIL: admin@tarazpad.local
+      TARAZPAD_ADMIN_PASSWORD: GatePass_2026!
+      JWT_SECRET: phase18-gate-secret
+      PORT: 8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax gate
+        run: |
+          node --check apps/api/src/masterdata_print_v8.js
+          node --check apps/api/src/masterdata_bank_v8_compat.js
+          node --check apps/web/phase18-ui.js
+          node --check apps/api/src/server.js
+          grep -q "registerMasterDataPrintV8(app)" apps/api/src/server.js
+          grep -q "phase18-ui.js" apps/web/fa-overlay.js
+      - name: Start API and migrate fresh MySQL
+        run: |
+          node apps/api/src/server.js > /tmp/tarazpad18.log 2>&1 & echo $! > /tmp/tarazpad18.pid
+          for i in $(seq 1 90); do curl -fsS http://127.0.0.1:8080/api/health && break; sleep 2; done
+          curl -fsS http://127.0.0.1:8080/api/health
+      - name: End-to-end sample detail gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOGIN=$(curl -fsS -X POST http://127.0.0.1:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"admin@tarazpad.local","password":"GatePass_2026!"}')
+          TOKEN=$(node -e "let x=JSON.parse(process.argv[1]);console.log(x.token||x.accessToken||'')" "$LOGIN")
+          test -n "$TOKEN"
+          H="Authorization: Bearer $TOKEN"
+          json(){ curl -fsS -H "$H" -H 'Content-Type: application/json' "$@"; }
+
+          # Product + rich profile
+          P=$(json -X POST http://127.0.0.1:8080/api/products -d '{"sku":"P18-001","name":"کالای تست جزئیات","unit":"کیلوگرم","salePrice":1200000}')
+          PID=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$P")
+          json -X PUT http://127.0.0.1:8080/api/iran/v8/products/$PID/detail -d '{"shortName":"کالای تست","brand":"ترازپاد","model":"A1","purchasePrice":900000,"salePrice":1200000,"imageUrl":"https://example.invalid/p.jpg","trackBatch":true,"trackExpiry":true,"units":[{"unitName":"کیلوگرم","conversionFactor":1,"isBase":true},{"unitName":"کارتن","conversionFactor":10,"isBase":false}]}' >/dev/null
+          PD=$(json http://127.0.0.1:8080/api/iran/v8/products/$PID/detail)
+          node -e "let x=JSON.parse(process.argv[1]);if(x.brand!=='ترازپاد'||Number(x.purchase_price)!==900000||x.units.length!==2)process.exit(1)" "$PD"
+
+          # Party rich profile
+          C=$(json -X POST http://127.0.0.1:8080/api/parties -d '{"name":"مشتری نمونه","partyType":"LEGAL","nationalId":"14001234567","mobile":"09120000000","roles":["CUSTOMER"]}')
+          CID=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$C")
+          json -X PUT http://127.0.0.1:8080/api/iran/v8/parties/$CID/detail -d '{"code":"C-100","name":"مشتری نمونه","economicCode":"411111111111","postalCode":"1234567890","receivableCreditLimit":50000000,"chequeCreditLimit":30000000,"roles":["CUSTOMER"],"contacts":[{"contactType":"MOBILE","title":"موبایل اصلی","value":"09120000000","isPrimary":true}],"addresses":[{"addressType":"DELIVERY","city":"کرج","addressText":"آدرس تست تحویل","isPrimary":true}]}' >/dev/null
+          CD=$(json http://127.0.0.1:8080/api/iran/v8/parties/$CID/detail)
+          node -e "let x=JSON.parse(process.argv[1]);if(Number(x.receivable_credit_limit)!==50000000||x.contacts.length!==1||x.addresses.length!==1)process.exit(1)" "$CD"
+
+          # Service
+          S=$(json -X POST http://127.0.0.1:8080/api/iran/v8/services -d '{"code":"SV-01","name":"خدمات بسته‌بندی","unit":"سرویس","salePrice":2000000,"vatRate":10,"commissionRate":5}')
+          SID=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$S")
+          test "$SID" -gt 0
+
+          # Bank rich details (compatibility with original treasury table)
+          B=$(json -X POST http://127.0.0.1:8080/api/iran/v8/bank-accounts -d '{"accountCode":"BNK-18","bankName":"ملت","accountType":"جاری","branchCode":"1041","branchName":"مرکزی","accountNo":"123456","iban":"IR120000000000000000000001","cardNo":"6104330000000000","accountHolder":"شرکت ترازپاد","openingBalance":48000000}')
+          BID=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$B")
+          BL=$(json http://127.0.0.1:8080/api/iran/v8/bank-accounts)
+          node -e "let a=JSON.parse(process.argv[1]),x=a.find(z=>Number(z.id)===Number(process.argv[2]));if(!x||x.branch_name!=='مرکزی'||Number(x.current_balance)!==48000000)process.exit(1)" "$BL" "$BID"
+
+          # Price list + visual print payload
+          PL=$(json -X POST http://127.0.0.1:8080/api/iran/v8/price-lists -d '{"code":"PL-18","title":"لیست قیمت تست","status":"ACTIVE","audience":"مشتریان"}')
+          PLID=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$PL")
+          json -X POST http://127.0.0.1:8080/api/iran/v8/price-lists/$PLID/items -d "{\"productId\":$PID,\"unitName\":\"کیلوگرم\",\"oldPrice\":1100000,\"price\":1200000}" >/dev/null
+          PPRINT=$(json http://127.0.0.1:8080/api/iran/v8/print/price-list/$PLID)
+          node -e "let x=JSON.parse(process.argv[1]);if(x.documentType!=='PRICE_LIST'||x.items.length!==1||Number(x.items[0].price)!==1200000)process.exit(1)" "$PPRINT"
+
+          # Waybill + print payload
+          WB=$(json -X POST http://127.0.0.1:8080/api/iran/v8/waybills -d '{"receiverName":"گیرنده نمونه","receiverPhone":"09121111111","originCity":"تهران","destinationCity":"کرج","goodsDescription":"کالای تست","packageCount":5,"grossWeight":120,"declaredValue":50000000,"freightAmount":2400000,"insuranceAmount":200000,"packingAmount":100000,"loadingAmount":150000,"codAmount":25000000,"trackingNo":"TRK180001"}')
+          WBID=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$WB")
+          WBP=$(json http://127.0.0.1:8080/api/iran/v8/print/waybill/$WBID)
+          node -e "let x=JSON.parse(process.argv[1]);if(x.documentType!=='WAYBILL'||x.waybill.tracking_no!=='TRK180001'||Number(x.waybill.freight_amount)!==2400000)process.exit(1)" "$WBP"
+
+          # Report endpoint must be callable on a fresh dataset
+          json http://127.0.0.1:8080/api/iran/v8/reports/item-profitability >/tmp/profit.json
+          node -e "let x=require('/tmp/profit.json');if(!Array.isArray(x))process.exit(1)"
+      - name: Web detail gate
+        run: |
+          grep -q 'پرونده کامل کالا' apps/web/phase18-ui.js
+          grep -q 'لیست قیمت تصویری' apps/web/phase18-ui.js
+          grep -q 'بارنامه و اسناد حمل' apps/web/phase18-ui.js
+          grep -q 'خرید، فروش و سود کالا' apps/web/phase18-ui.js
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase18-server-log
+          path: /tmp/tarazpad18.log
