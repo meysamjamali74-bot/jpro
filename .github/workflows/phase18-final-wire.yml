@@ -1,0 +1,54 @@
+name: Phase 18 Final Detail Wiring
+on:
+  push:
+    branches: [enterprise-phase-1-8-final-details]
+permissions:
+  contents: write
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: enterprise-phase-1-8-final-details
+          fetch-depth: 0
+      - name: Wire final Phase 18 API and UI
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('apps/api/src/iran_extensions.js')
+          s=p.read_text()
+          for imp in [
+            "import { registerBankMasterV8Routes } from './bank_master_v8.js';\n",
+            "import { registerPrintMasterV8Routes } from './print_master_v8.js';\n"
+          ]:
+            if imp not in s: s=imp+s
+          marker='  registerCommercialMasterV8Routes(app);\n'
+          calls='  registerBankMasterV8Routes(app);\n  registerPrintMasterV8Routes(app);\n'
+          if 'registerBankMasterV8Routes(app);' not in s:
+            s=s.replace(marker,marker+calls,1)
+          p.write_text(s)
+
+          f=Path('apps/web/fa-overlay.js')
+          x=f.read_text()
+          if "load('/phase18-final-ui.js')" not in x:
+            x=x.replace("load('/phase18-ui.js');","load('/phase18-ui.js');load('/phase18-final-ui.js');")
+          f.write_text(x)
+          PY
+      - name: Syntax check
+        run: |
+          node --check apps/api/src/bank_master_v8.js
+          node --check apps/api/src/print_master_v8.js
+          node --check apps/api/src/iran_extensions.js
+          node --check apps/web/phase18-final-ui.js
+          node --check apps/web/fa-overlay.js
+      - name: Commit wiring
+        run: |
+          if git diff --quiet; then echo 'Already wired'; exit 0; fi
+          git config user.name tarazpad-release-bot
+          git config user.email actions@tarazpad.local
+          git add apps/api/src/iran_extensions.js apps/web/fa-overlay.js
+          git commit -m 'Wire Enterprise 1.8 final bank and print modules'
+          git pull --rebase origin enterprise-phase-1-8-final-details
+          git push origin HEAD:enterprise-phase-1-8-final-details
