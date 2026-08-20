@@ -1,0 +1,57 @@
+name: Phase 18 Wire
+on:
+  push:
+    branches: [enterprise-phase-1-8-masterdata-print]
+    paths:
+      - 'apps/api/src/masterdata_print_v8.js'
+      - 'apps/web/phase18-ui.js'
+      - 'database/040_masterdata_print_logistics.sql'
+      - '.github/workflows/phase18-wire.yml'
+permissions:
+  contents: write
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: enterprise-phase-1-8-masterdata-print
+          fetch-depth: 0
+      - name: Wire backend and frontend
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('apps/api/src/server.js')
+          s=p.read_text()
+          imp="import { registerMasterDataPrintV8 } from './masterdata_print_v8.js';\n"
+          if imp not in s:
+              anchor="import { registerIranRoutes } from './iran.js';\n"
+              if anchor not in s: raise SystemExit('server import anchor missing')
+              s=s.replace(anchor,anchor+imp)
+          call='registerMasterDataPrintV8(app);\n'
+          if call not in s:
+              anchor='registerIranRoutes(app);\n'
+              if anchor not in s: raise SystemExit('server registration anchor missing')
+              s=s.replace(anchor,anchor+call)
+          p.write_text(s)
+
+          p=Path('apps/web/fa-overlay.js')
+          s=p.read_text()
+          if "load('/phase18-ui.js')" not in s:
+              anchor="load('/phase17-ui.js');})();"
+              if anchor not in s: raise SystemExit('fa overlay loader anchor missing')
+              s=s.replace(anchor,"load('/phase17-ui.js');load('/phase18-ui.js');})();")
+          p.write_text(s)
+          PY
+          node --check apps/api/src/masterdata_print_v8.js
+          node --check apps/web/phase18-ui.js
+          node --check apps/api/src/server.js
+          node --check apps/web/fa-overlay.js
+      - name: Commit wiring
+        run: |
+          if git diff --quiet; then echo 'Already wired'; exit 0; fi
+          git config user.name 'tarazpad-release-bot'
+          git config user.email 'actions@tarazpad.local'
+          git add apps/api/src/server.js apps/web/fa-overlay.js
+          git commit -m 'Wire Enterprise 1.8 master data and print modules'
+          git push origin HEAD:enterprise-phase-1-8-masterdata-print
