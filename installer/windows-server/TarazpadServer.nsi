@@ -54,6 +54,17 @@ Section "Install Tarazpad ERP Server" SEC_MAIN
       Quit
   ${EndIf}
 
+  DetailPrint "Installing accounting HARD_CLOSED database guards..."
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\Install-DatabaseGuards.ps1"' $1
+  ${If} $1 != 0
+    IfSilent silent_guard_error interactive_guard_error
+    interactive_guard_error:
+      MessageBox MB_ICONSTOP|MB_OK "Tarazpad database guard setup stopped with error code $1.$\r$\nThe application was not marked as successfully installed."
+    silent_guard_error:
+      SetErrorLevel $1
+      Quit
+  ${EndIf}
+
   WriteUninstaller "$INSTDIR\Uninstall-TarazpadServer.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "DisplayName" "Tarazpad ERP Web Server"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "DisplayVersion" "${VERSION}"
