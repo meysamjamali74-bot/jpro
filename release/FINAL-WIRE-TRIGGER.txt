@@ -1,0 +1,2 @@
+Tarazpad Enterprise 1.8 final wiring trigger.
+This marker can be removed after the release wiring workflow commits the deterministic API/UI/schema fixes.
