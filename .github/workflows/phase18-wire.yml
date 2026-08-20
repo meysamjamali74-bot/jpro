@@ -7,6 +7,7 @@ on:
       - 'apps/api/src/masterdata_bank_v8_compat.js'
       - 'apps/api/src/management_profit_v8.js'
       - 'apps/web/phase18-ui.js'
+      - 'apps/web/phase18-management-ui.js'
       - 'database/040_masterdata_print_logistics.sql'
       - 'database/041_bank_masterdata_compatibility.sql'
       - '.github/workflows/phase18-wire.yml'
@@ -45,16 +46,19 @@ jobs:
 
           p=Path('apps/web/fa-overlay.js')
           s=p.read_text()
-          if "load('/phase18-ui.js')" not in s:
-              anchor="load('/phase17-ui.js');})();"
-              if anchor not in s: raise SystemExit('fa overlay loader anchor missing')
-              s=s.replace(anchor,"load('/phase17-ui.js');load('/phase18-ui.js');})();")
+          target="load('/phase17-ui.js');load('/phase18-ui.js');load('/phase18-management-ui.js');})();"
+          if target not in s:
+            s=s.replace("load('/phase18-management-ui.js');",'').replace("load('/phase18-ui.js');",'')
+            anchor="load('/phase17-ui.js');})();"
+            if anchor not in s: raise SystemExit('fa overlay loader anchor missing')
+            s=s.replace(anchor,target)
           p.write_text(s)
           PY
           node --check apps/api/src/masterdata_bank_v8_compat.js
           node --check apps/api/src/masterdata_print_v8.js
           node --check apps/api/src/management_profit_v8.js
           node --check apps/web/phase18-ui.js
+          node --check apps/web/phase18-management-ui.js
           node --check apps/api/src/server.js
           node --check apps/web/fa-overlay.js
       - name: Commit wiring
@@ -63,6 +67,6 @@ jobs:
           git config user.name 'tarazpad-release-bot'
           git config user.email 'actions@tarazpad.local'
           git add apps/api/src/server.js apps/web/fa-overlay.js
-          git commit -m 'Wire Enterprise 1.8 managerial profitability module'
+          git commit -m 'Wire Enterprise 1.8 detailed management and print UI'
           git pull --rebase origin enterprise-phase-1-8-masterdata-print
           git push origin HEAD:enterprise-phase-1-8-masterdata-print
