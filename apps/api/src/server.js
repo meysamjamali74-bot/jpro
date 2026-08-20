@@ -10,6 +10,7 @@ import { calculateCommission } from './commission.js';
 import { registerEnterpriseRoutes } from './enterprise.js';
 import { registerIranExtensionRoutes } from './iran_extensions.js';
 import { registerIranRoutes } from './iran.js';
+import { registerMasterDataPrintV8 } from './masterdata_print_v8.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
@@ -81,6 +82,7 @@ app.get('/api/finance/trial-balance',requireRole('ACCOUNTANT','FINANCE_MANAGER')
 registerEnterpriseRoutes(app);
 registerIranExtensionRoutes(app);
 registerIranRoutes(app);
+registerMasterDataPrintV8(app);
 app.use('/api',(req,res)=>res.status(404).json({error:'API_NOT_FOUND',path:req.path}));
 app.use(express.static(webDir,{index:'index.html',maxAge:process.env.NODE_ENV==='production'?'1h':0}));
 app.use((_req,res)=>res.sendFile(path.join(webDir,'index.html')));
