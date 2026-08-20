@@ -16,25 +16,8 @@ const map={
 'PRICE':'قیمت','QUANTITY':'مقدار','TAX':'مالیات','ITEM':'قلم کالا','NO_PO':'فاقد سفارش خرید','NO_RECEIPT':'فاقد رسید انبار','UNMATCHED':'تطبیق‌نشده','SUGGESTED':'تطبیق پیشنهادی','MATCHED':'تطبیق‌شده'
 };
 const exact=/^[A-Z][A-Z0-9_]*$/;
-function tableHeader(el){
- if(el.tagName!=='TD')return'';
- const row=el.parentElement,table=el.closest('table');if(!row||!table)return'';
- const index=[...row.children].indexOf(el);return (table.querySelectorAll('thead th')[index]?.textContent||'').trim();
-}
-function contextual(el,s){
- const header=tableHeader(el);
- if(s==='CREDIT'&&(header.includes('تسویه')||header.includes('روش پرداخت')||header.includes('نوع پرداخت')))return'نسیه / اعتباری';
- if(s==='CREDIT'&&(header.includes('ماهیت')||header.includes('حساب')))return'بستانکار';
- if(s==='PAYABLE'&&header.includes('چک'))return'پرداختی';
- if(s==='RECEIVABLE'&&header.includes('چک'))return'دریافتی';
- return map[s];
-}
-function translate(root=document){
- root.querySelectorAll('td,.badge,.status-chip b,.status-chip small,option').forEach(el=>{
-   const s=(el.textContent||'').trim(),value=contextual(el,s);
-   if(value)el.textContent=value;
-   else if(exact.test(s)&&s.includes('_'))el.textContent=s.split('_').map(x=>map[x]||x).join(' ');
- });
-}
+function tableHeader(el){if(el.tagName!=='TD')return'';const row=el.parentElement,table=el.closest('table');if(!row||!table)return'';const index=[...row.children].indexOf(el);return (table.querySelectorAll('thead th')[index]?.textContent||'').trim()}
+function contextual(el,s){const header=tableHeader(el);if(s==='CREDIT'&&(header.includes('تسویه')||header.includes('روش پرداخت')||header.includes('نوع پرداخت')))return'نسیه / اعتباری';if(s==='CREDIT'&&(header.includes('ماهیت')||header.includes('حساب')))return'بستانکار';if(s==='PAYABLE'&&header.includes('چک'))return'پرداختی';if(s==='RECEIVABLE'&&header.includes('چک'))return'دریافتی';return map[s]}
+function translate(root=document){root.querySelectorAll('td,.badge,.status-chip b,.status-chip small,option').forEach(el=>{const s=(el.textContent||'').trim(),value=contextual(el,s);if(value)el.textContent=value;else if(exact.test(s)&&s.includes('_'))el.textContent=s.split('_').map(x=>map[x]||x).join(' ')})}
 let scheduled=false;const obs=new MutationObserver(()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;translate()})});obs.observe(document.documentElement,{childList:true,subtree:true,characterData:false});translate();
-load('/phase17-ui.js');})();
+load('/phase17-ui.js');load('/phase18-ui.js');})();
