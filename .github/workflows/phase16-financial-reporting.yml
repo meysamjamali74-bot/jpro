@@ -62,7 +62,7 @@ jobs:
           test -n "$MYSQL_CID"
           docker exec -i "$MYSQL_CID" mysql -uroot -proot_p16_2026 tarazpad < installer/windows-server/HardClose-DatabaseGuards.sql
           COUNT=$(docker exec "$MYSQL_CID" mysql -uroot -proot_p16_2026 tarazpad -N -e "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema='tarazpad' AND trigger_name LIKE 'trg_journal%hard_close%';")
-          test "$COUNT" -eq 5
+          test "$COUNT" -eq 6
       - name: Financial reporting and hard-close E2E
         env:
           TEST_BASE_URL: http://127.0.0.1:8080
@@ -83,7 +83,7 @@ jobs:
           test "$(sed -n '2p' /tmp/p16-invariants.txt)" -ge 12
           test "$(sed -n '3p' /tmp/p16-invariants.txt)" -ge 1
           test "$(sed -n '4p' /tmp/p16-invariants.txt)" -ge 1
-          test "$(sed -n '5p' /tmp/p16-invariants.txt)" -eq 5
+          test "$(sed -n '5p' /tmp/p16-invariants.txt)" -eq 6
           awk 'NR==6 { exit !($1 < 1) }' /tmp/p16-invariants.txt
       - name: Stop API
         if: always()
