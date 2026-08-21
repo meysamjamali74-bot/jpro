@@ -16,7 +16,5 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <BaseOutputPath>../../../.artifacts/desktop/bin/</BaseOutputPath>
-    <BaseIntermediateOutputPath>../../../.artifacts/desktop/obj/</BaseIntermediateOutputPath>
   </PropertyGroup>
 </Project>
