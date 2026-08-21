@@ -21,6 +21,14 @@ jobs:
           npm --prefix apps/api test
       - name: Authoritative route ownership
         run: node --test apps/api/test/runtime_route_ownership.test.js
+      - name: Native desktop architecture invariant
+        run: |
+          test -f apps/desktop/Tarazpad.Desktop/Views/MainWindow.xaml
+          test -f apps/desktop/Tarazpad.Desktop/Views/DashboardView.xaml
+          if grep -R -E 'WebView2|<WebBrowser' apps/desktop/Tarazpad.Desktop --include='*.xaml' --include='*.cs'; then
+            echo 'Browser/WebView UI is not allowed in Tarazpad Native Desktop'
+            exit 1
+          fi
 
   phase16-financial:
     runs-on: ubuntu-latest
@@ -58,6 +66,14 @@ jobs:
           node apps/api/src/server.js >/tmp/rc16.log 2>&1 & echo $! >/tmp/rc16.pid
           for i in {1..90}; do curl -fsS http://127.0.0.1:8080/api/health >/tmp/health16.json && break; sleep 2; done
           jq -e '.ok==true' /tmp/health16.json || { cat /tmp/rc16.log; exit 1; }
+      - name: Install native hard-close database guards
+        run: |
+          set -euo pipefail
+          MYSQL_CID=$(docker ps --filter ancestor=mysql:8.4 --format '{{.ID}}' | head -1)
+          test -n "$MYSQL_CID"
+          docker exec -i "$MYSQL_CID" mysql -uroot -prc16_root_2026 tarazpad < installer/windows-server/HardClose-DatabaseGuards.sql
+          COUNT=$(docker exec "$MYSQL_CID" mysql -uroot -prc16_root_2026 tarazpad -N -e "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema='tarazpad' AND trigger_name LIKE 'trg_journal%hard_close%';")
+          test "$COUNT" -eq 6
       - name: Financial reporting / hard close E2E
         env:
           TEST_BASE_URL: http://127.0.0.1:8080
@@ -132,13 +148,13 @@ jobs:
           docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -utarazpad tarazpad -N -e "SELECT COALESCE(SUM(ABS(z.bal)),0) FROM (SELECT a.id,SUM(CASE WHEN a.account_type='REVENUE' THEN jl.credit-jl.debit ELSE jl.debit-jl.credit END) bal FROM accounts a JOIN journal_lines jl ON jl.account_id=a.id JOIN journal_entries je ON je.id=jl.journal_entry_id JOIN fiscal_years fy ON fy.company_id=je.company_id AND fy.year_no=1405 WHERE je.company_id=1 AND a.account_type IN ('REVENUE','EXPENSE') AND je.status IN ('POSTED','LOCKED') AND COALESCE(je.posting_date,je.entry_date) BETWEEN fy.start_date AND fy.end_date GROUP BY a.id) z; SELECT COUNT(*) FROM year_end_close_runs WHERE status='OPENING_POSTED'; SELECT COUNT(*) FROM compliance_periods WHERE status='PAID'; SELECT ABS(COALESCE(SUM(jl.debit-jl.credit),0)) FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE je.company_id=1 AND je.status IN ('POSTED','LOCKED');" >/tmp/rc17inv
           cat /tmp/rc17inv
           awk 'NR==1 {exit !($1<1)} NR==2 {exit !($1>=1)} NR==3 {exit !($1>=1)} NR==4 {exit !($1<1)}' /tmp/rc17inv
-      - name: Persian web smoke
+      - name: Persian runtime and native desktop smoke
         run: |
           curl -fsS http://127.0.0.1:8080/ >/tmp/home.html
           grep -q 'ترازپاد' /tmp/home.html
-          grep -q 'phase15-ui.js' /tmp/home.html
-          grep -q 'phase16-ui.js' /tmp/home.html
-          grep -q 'phase17-ui.js' /tmp/home.html
+          test -f apps/desktop/Tarazpad.Desktop/Views/MainWindow.xaml
+          test -f apps/desktop/Tarazpad.Desktop/Views/DashboardView.xaml
+          grep -q 'ترازپاد' apps/desktop/Tarazpad.Desktop/Views/MainWindow.xaml
       - if: failure()
         uses: actions/upload-artifact@v4
         with: { name: rc17-diagnostics, path: /tmp/rc17.log }
