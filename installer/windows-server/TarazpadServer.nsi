@@ -33,10 +33,28 @@ UninstPage instfiles
 
 Section "Install Tarazpad ERP Server" SEC_MAIN
   SetShellVarContext all
-  SetOutPath "$INSTDIR"
-  DetailPrint "Extracting Tarazpad Enterprise server payload..."
+
+  ; Keep the embedded Node runtime stable during reinstall/upgrade. On an existing
+  ; installation node.exe is normally running from this exact directory. Trying to
+  ; overwrite that executable makes silent second-run/idempotency setup fail on
+  ; Windows with a file-in-use error. Application files and installer scripts remain
+  ; replaceable, while the runtime is installed only when it is missing.
+  DetailPrint "Extracting Tarazpad Enterprise application payload..."
   SetCompress auto
-  File /r /x prereqs "build\staging\*"
+  SetOverwrite on
+  SetOutPath "$INSTDIR"
+  File /r "build\staging\app"
+  File "build\staging\Install-TarazpadServer.ps1"
+  File "build\staging\Install-DatabaseGuards.ps1"
+  File "build\staging\HardClose-DatabaseGuards.sql"
+  File "build\staging\BUILD-INFO.txt"
+
+  DetailPrint "Checking embedded Node.js runtime..."
+  SetOutPath "$INSTDIR\runtime"
+  SetOverwrite off
+  File "build\staging\runtime\node.exe"
+  SetOverwrite on
+
   SetOutPath "$INSTDIR\prereqs"
   SetCompress off
   File /r "build\staging\prereqs\*"
