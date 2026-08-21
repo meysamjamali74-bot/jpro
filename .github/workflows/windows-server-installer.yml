@@ -17,6 +17,10 @@ on:
       - 'installer/windows-server/**'
       - '.github/workflows/windows-server-installer.yml'
 
+concurrency:
+  group: tarazpad-windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-native-server-installer:
     runs-on: windows-latest
@@ -89,7 +93,9 @@ jobs:
           node --check apps/api/src/db.js
           node --check apps/api/src/auth.js
           node --check apps/api/src/fiscal_lock_guard_v8.js
+          node --check apps/api/src/customer_club_offline.js
           node --check apps/web/app.js
+          node --check apps/web/customer-club-ui.js
           npm --prefix apps/api test
           if(!(Test-Path 'installer/windows-server/build/staging/app/apps/api/node_modules/mysql2')){throw 'Production dependencies were not staged.'}
           if(!(Test-Path 'installer/windows-server/build/staging/Install-DatabaseGuards.ps1')){throw 'Database guard installer was not staged.'}
