@@ -58,11 +58,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $desktopFiles=Get-ChildItem 'apps/desktop/Tarazpad.Desktop' -Recurse -File | Where-Object { $_.Extension -in '.cs','.xaml','.csproj' }
-          if($desktopFiles|Select-String -Pattern 'WebView2|Process\.Start\("http|explorer\.exe.*http' -Quiet){throw 'Browser/WebView dependency detected in native desktop source.'}
+          $desktopFiles = @(git ls-files 'apps/desktop/Tarazpad.Desktop') | Where-Object { [IO.Path]::GetExtension($_) -in '.cs','.xaml','.csproj' }
+          if(!$desktopFiles.Count){throw 'No tracked native desktop source files found.'}
+          $matches = @($desktopFiles | ForEach-Object { Select-String -Path $_ -Pattern 'WebView2|Process\.Start\("http|explorer\.exe.*http' })
+          if($matches.Count){$matches | ForEach-Object { Write-Host "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }; throw 'Browser/WebView dependency detected in tracked native desktop source.'}
           if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Views/MainWindow.xaml')){throw 'Native MainWindow missing.'}
           if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Views/ReportCenterView.xaml')){throw 'Native financial report center missing.'}
           if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Infrastructure/PersianDate.cs')){throw 'Persian date support missing.'}
+          Write-Host "Native architecture guard passed across $($desktopFiles.Count) tracked source files."
 
       - name: Install production API dependencies
         working-directory: apps/api
