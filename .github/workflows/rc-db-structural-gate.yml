@@ -62,7 +62,7 @@ jobs:
         run: |
           test -f installer/windows-server/HardClose-DatabaseGuards.sql
           test -f installer/windows-server/Install-DatabaseGuards.ps1
-          test "$(grep -c '^CREATE TRIGGER trg_journal.*hard_close' installer/windows-server/HardClose-DatabaseGuards.sql)" -eq 5
+          test "$(grep -c '^CREATE TRIGGER trg_journal.*hard_close' installer/windows-server/HardClose-DatabaseGuards.sql)" -eq 6
           grep -q 'ACCOUNTING_PERIOD_HARD_CLOSED' installer/windows-server/HardClose-DatabaseGuards.sql
       - name: Per-entry balancing invariant helper
         env: { MYSQL_PWD: rcstruct_db_2026 }
