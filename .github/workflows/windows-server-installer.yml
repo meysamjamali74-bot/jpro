@@ -1,8 +1,8 @@
-name: Tarazpad Native Windows Server Installer
+name: Tarazpad Enterprise 1.8 Native Windows Installer
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, release/tarazpad-enterprise-1-8-final-20260821]
     paths:
       - 'apps/api/**'
       - 'apps/web/**'
@@ -16,6 +16,10 @@ on:
       - 'database/**'
       - 'installer/windows-server/**'
       - '.github/workflows/windows-server-installer.yml'
+
+concurrency:
+  group: tarazpad-windows-installer-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-native-server-installer:
@@ -46,7 +50,7 @@ jobs:
           Copy-Item 'installer/windows-server/Install-DatabaseGuards.ps1' "$stage/Install-DatabaseGuards.ps1" -Force
           Copy-Item 'installer/windows-server/HardClose-DatabaseGuards.sql' "$stage/HardClose-DatabaseGuards.sql" -Force
           Copy-Item (Get-Command node.exe).Source "$stage/runtime/node.exe" -Force
-          "Tarazpad native web server payload $(Get-Date -Format o)" | Set-Content "$stage/BUILD-INFO.txt"
+          "Tarazpad Enterprise 1.8 native server payload $(Get-Date -Format o)" | Set-Content "$stage/BUILD-INFO.txt"
 
       - name: Bundle MySQL 8.4.11 only for machines that need it
         shell: powershell
@@ -77,7 +81,7 @@ jobs:
           curl.exe -L --fail --retry 4 --retry-delay 3 -o $out 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
           if(!(Test-Path $out) -or (Get-Item $out).Length -lt 5MB){throw 'VC++ runtime download failed.'}
 
-      - name: Static installer checks
+      - name: Static installer and security checks
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
@@ -87,11 +91,19 @@ jobs:
           if(!(Select-String -Path 'installer/windows-server/HardClose-DatabaseGuards.sql' -Pattern 'trg_journal_line_hard_close_delete' -Quiet)){throw 'Hard-close DB guard SQL is incomplete.'}
           node --check apps/api/src/server.js
           node --check apps/api/src/db.js
+          node --check apps/api/src/auth.js
           node --check apps/api/src/fiscal_lock_guard_v8.js
+          node --check apps/api/src/customer_club_offline.js
           node --check apps/web/app.js
+          node --check apps/web/customer-club-ui.js
           npm --prefix apps/api test
           if(!(Test-Path 'installer/windows-server/build/staging/app/apps/api/node_modules/mysql2')){throw 'Production dependencies were not staged.'}
           if(!(Test-Path 'installer/windows-server/build/staging/Install-DatabaseGuards.ps1')){throw 'Database guard installer was not staged.'}
+          $env:NODE_ENV='production'
+          Remove-Item Env:JWT_SECRET -ErrorAction SilentlyContinue
+          node -e "import('./apps/api/src/auth.js').then(()=>process.exit(2)).catch(e=>{if(!String(e.message).includes('JWT_SECRET'))process.exit(3);console.log('Production JWT fail-closed check passed')})"
+          if($LASTEXITCODE -ne 0){throw 'Production JWT fail-closed check failed.'}
+          Remove-Item Env:NODE_ENV -ErrorAction SilentlyContinue
 
       - name: Install NSIS build tool with retries and fallback
         shell: powershell
@@ -118,21 +130,20 @@ jobs:
           if(!$found){throw 'NSIS makensis.exe could not be installed from available build-tool sources.'}
           Write-Host "NSIS ready: $found"
 
-      - name: Build native offline Setup EXE
+      - name: Build native offline Enterprise Setup EXE
         working-directory: installer/windows-server
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
           $makensis=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
-          if(!$makensis){
-            $makensis=@('C:\Program Files (x86)\NSIS\makensis.exe','C:\Program Files\NSIS\makensis.exe')|Where-Object{Test-Path $_}|Select-Object -First 1
-          }
+          if(!$makensis){$makensis=@('C:\Program Files (x86)\NSIS\makensis.exe','C:\Program Files\NSIS\makensis.exe')|Where-Object{Test-Path $_}|Select-Object -First 1}
           if(!$makensis){throw 'makensis.exe is unavailable after NSIS setup.'}
           & $makensis 'TarazpadServer.nsi'
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          $exe='build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe'
-          if(!(Test-Path $exe)){throw 'Setup EXE not produced.'}
-          Get-FileHash $exe -Algorithm SHA256 | Format-List | Out-File 'build/SHA256SUMS.txt'
+          $exe='build/Tarazpad-ERP-Enterprise-Setup-1.8.0.exe'
+          if(!(Test-Path $exe)){throw 'Enterprise Setup EXE not produced.'}
+          $hash=Get-FileHash $exe -Algorithm SHA256
+          "SHA256  $($hash.Hash)  Tarazpad-ERP-Enterprise-Setup-1.8.0.exe" | Set-Content 'build/SHA256SUMS.txt'
 
       - name: Full native configuration and second-run idempotency test
         timeout-minutes: 12
@@ -143,19 +154,19 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Tarazpad-Native-Installer-Diagnostics
+          name: Tarazpad-Enterprise-1.8-Installer-Diagnostics
           path: |
             C:/ProgramData/Tarazpad/server/logs/**
             C:/ProgramData/Tarazpad/server/my.ini
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Upload native Windows web server setup
+      - name: Upload Tarazpad Enterprise 1.8 Windows setup
         uses: actions/upload-artifact@v4
         with:
-          name: Tarazpad-ERP-Native-Web-Server-Setup
+          name: Tarazpad-ERP-Enterprise-Setup-1.8.0
           path: |
-            installer/windows-server/build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe
+            installer/windows-server/build/Tarazpad-ERP-Enterprise-Setup-1.8.0.exe
             installer/windows-server/build/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90

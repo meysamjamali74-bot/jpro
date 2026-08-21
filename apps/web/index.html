@@ -8,6 +8,7 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/enterprise.css" />
+  <link rel="stylesheet" href="/customer-club.css" />
 </head>
 <body>
   <div id="toast" class="toast"></div>
@@ -25,7 +26,7 @@
       <label>ایمیل<input id="email" type="email" autocomplete="username" required placeholder="admin@tarazpad.local" /></label>
       <label>رمز عبور<input id="password" type="password" autocomplete="current-password" required placeholder="••••••••" /></label>
       <button class="primary" type="submit">ورود امن</button><small id="loginError" class="error"></small>
-      <div class="security-note">MySQL • ردپای حسابرسی • کنترل دسترسی • رابط فارسی</div>
+      <div class="security-note">MySQL داخلی • شبکه LAN • ردپای حسابرسی • کنترل دسترسی • رابط فارسی</div>
     </form>
   </section>
   <section id="appView" class="app-shell hidden">
@@ -54,12 +55,21 @@
           <div class="table-wrap glass-sub"><table id="moduleTable"><thead></thead><tbody></tbody></table><div id="emptyState" class="empty hidden">داده‌ای برای نمایش وجود ندارد.</div></div>
           <div class="pager glass-sub"><button id="prevPage">صفحه قبل</button><span id="pagerInfo">—</span><button id="nextPage">صفحه بعد</button></div>
         </section>
+        <section id="customerClubPage" class="page cc-page">
+          <div class="cc-head"><div><h2>باشگاه مشتریان و پیگیری</h2><p>ثبت و ورود گروهی مشتری، تخصیص کارشناس، صف پیگیری، نتیجه تماس و وضعیت وفاداری در شبکه داخلی</p></div><div class="cc-actions"><button id="ccRefresh" class="ghost">به‌روزرسانی</button><button id="ccImport" class="ghost">ورود CSV</button><button id="ccNewCustomer" class="primary">مشتری جدید</button></div></div>
+          <div id="ccKpis" class="cc-kpis"></div>
+          <div class="cc-tabs"><button class="active" data-cctab="customers">مشتریان</button><button data-cctab="followups">صف پیگیری</button><button data-cctab="imports">سوابق ورود</button></div>
+          <div id="ccCustomerFilters" class="cc-toolbar glass-sub"><input id="ccSearch" placeholder="جستجوی نام، موبایل، کد یا عضویت..."><select id="ccStatus"><option value="">همه وضعیت‌ها</option><option value="NEW">جدید</option><option value="ACTIVE">فعال</option><option value="PAUSED">متوقف</option><option value="WON">موفق</option><option value="LOST">از دست‌رفته</option><option value="DO_NOT_CONTACT">عدم تماس</option></select><select id="ccDue"><option value="">همه سررسیدها</option><option value="overdue">معوق</option><option value="today">امروز</option><option value="upcoming">آینده</option></select><select id="ccOwner"><option value="">همه کارشناسان</option></select></div>
+          <div id="ccFollowupFilters" class="cc-toolbar glass-sub" style="display:none"><select id="ccFollowDue"><option value="">همه زمان‌ها</option><option value="overdue">معوق</option><option value="today">امروز</option><option value="upcoming">آینده</option></select><select id="ccFollowStatus"><option value="">همه وضعیت‌ها</option><option value="OPEN">باز</option><option value="IN_PROGRESS">در حال انجام</option><option value="COMPLETED">انجام‌شده</option><option value="CANCELLED">لغوشده</option></select></div>
+          <div id="ccBody" class="glass-sub"><div class="cc-empty">برای دریافت اطلاعات باشگاه، صفحه را باز کنید.</div></div>
+        </section>
       </div>
     </main>
   </section>
   <aside id="widgetDrawer" class="drawer glass hidden"><div class="drawer-head"><h3>کتابخانه ویجت‌ها</h3><button data-close="widgetDrawer">×</button></div><input id="widgetSearch" placeholder="جستجوی ویجت..."/><div id="widgetLibrary" class="widget-library"></div></aside>
   <aside id="themeDrawer" class="drawer glass hidden"><div class="drawer-head"><h3>استودیوی ظاهر</h3><button data-close="themeDrawer">×</button></div><label>فونت<select id="fontFamily"><option value="Tahoma">Tahoma</option><option value="Arial">Arial</option><option value="system-ui">System UI</option></select></label><label>اندازه فونت<input id="fontSize" type="range" min="12" max="18" value="14" /></label><label>رنگ منو<input id="menuColor" type="color" value="#0a1f46" /></label><label>رنگ تأکیدی<input id="accentColor" type="color" value="#22d3ee" /></label><label>شفافیت شیشه<input id="glassOpacity" type="range" min="35" max="95" value="72" /></label><label>شدت محوشدگی شیشه<input id="glassBlur" type="range" min="4" max="32" value="18" /></label><label>تصویر پس‌زمینه<input id="backgroundFile" type="file" accept="image/*" /></label><button id="resetTheme" class="ghost">بازنشانی ظاهر</button></aside>
   <div id="modal" class="modal hidden"><div class="modal-card glass enterprise-modal"><div class="drawer-head"><h3 id="modalTitle">ایجاد</h3><button id="modalClose">×</button></div><form id="entityForm" class="form-grid"></form></div></div>
+  <div id="ccModal" class="cc-modal hidden"><div class="cc-modal-card"><div class="cc-modal-head"><h3 id="ccModalTitle">باشگاه مشتریان</h3><button id="ccModalClose">×</button></div><form id="ccModalForm" class="cc-form"></form></div></div>
   <script type="module" src="/app-v2.js"></script>
   <script src="/fa-overlay.js" defer></script>
   <script src="/phase12-ui.js" defer></script>
@@ -70,4 +80,5 @@
   <script src="/phase13-ui.js" defer></script>
   <script src="/phase14-ui.js" defer></script>
   <script src="/phase15-ui.js" defer></script>
+  <script src="/customer-club-ui.js" defer></script>
 </body></html>

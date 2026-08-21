@@ -3,22 +3,22 @@ RequestExecutionLevel admin
 SetCompressor zlib
 !include "LogicLib.nsh"
 
-!define APPNAME "Tarazpad ERP Web Server"
-!define VERSION "0.2.0"
+!define APPNAME "Tarazpad ERP Enterprise Web Server"
+!define VERSION "1.8.0"
 
 Name "${APPNAME}"
 Caption "${APPNAME} ${VERSION}"
-OutFile "build\Tarazpad-ERP-Web-Server-Setup-${VERSION}.exe"
+OutFile "build\Tarazpad-ERP-Enterprise-Setup-${VERSION}.exe"
 InstallDir "$WINDIR\..\ProgramData\Tarazpad\server"
 ShowInstDetails show
 ShowUninstDetails show
 
-VIProductVersion "0.2.0.0"
-VIAddVersionKey "ProductName" "Tarazpad ERP Web Server"
-VIAddVersionKey "FileDescription" "Tarazpad ERP native Windows web server installer"
+VIProductVersion "1.8.0.0"
+VIAddVersionKey "ProductName" "Tarazpad ERP Enterprise"
+VIAddVersionKey "FileDescription" "Tarazpad ERP Enterprise 1.8 native Windows web server installer"
 VIAddVersionKey "CompanyName" "Tarazpad"
-VIAddVersionKey "FileVersion" "0.2.0"
-VIAddVersionKey "ProductVersion" "0.2.0"
+VIAddVersionKey "FileVersion" "1.8.0"
+VIAddVersionKey "ProductVersion" "1.8.0"
 
 Function .onInit
   ReadEnvStr $0 "ProgramData"
@@ -33,10 +33,28 @@ UninstPage instfiles
 
 Section "Install Tarazpad ERP Server" SEC_MAIN
   SetShellVarContext all
-  SetOutPath "$INSTDIR"
-  DetailPrint "Extracting Tarazpad server payload..."
+
+  ; Keep the embedded Node runtime stable during reinstall/upgrade. On an existing
+  ; installation node.exe is normally running from this exact directory. Trying to
+  ; overwrite that executable makes silent second-run/idempotency setup fail on
+  ; Windows with a file-in-use error. Application files and installer scripts remain
+  ; replaceable, while the runtime is installed only when it is missing.
+  DetailPrint "Extracting Tarazpad Enterprise application payload..."
   SetCompress auto
-  File /r /x prereqs "build\staging\*"
+  SetOverwrite on
+  SetOutPath "$INSTDIR"
+  File /r "build\staging\app"
+  File "build\staging\Install-TarazpadServer.ps1"
+  File "build\staging\Install-DatabaseGuards.ps1"
+  File "build\staging\HardClose-DatabaseGuards.sql"
+  File "build\staging\BUILD-INFO.txt"
+
+  DetailPrint "Checking embedded Node.js runtime..."
+  SetOutPath "$INSTDIR\runtime"
+  SetOverwrite off
+  File "build\staging\runtime\node.exe"
+  SetOverwrite on
+
   SetOutPath "$INSTDIR\prereqs"
   SetCompress off
   File /r "build\staging\prereqs\*"
@@ -66,7 +84,7 @@ Section "Install Tarazpad ERP Server" SEC_MAIN
   ${EndIf}
 
   WriteUninstaller "$INSTDIR\Uninstall-TarazpadServer.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "DisplayName" "Tarazpad ERP Web Server"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "DisplayName" "Tarazpad ERP Enterprise"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "Publisher" "Tarazpad"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "UninstallString" '"$INSTDIR\Uninstall-TarazpadServer.exe"'
