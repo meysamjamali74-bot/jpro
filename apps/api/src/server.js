@@ -10,6 +10,7 @@ import { calculateCommission } from './commission.js';
 import { registerEnterpriseRoutes } from './enterprise.js';
 import { registerIranExtensionRoutes } from './iran_extensions.js';
 import { registerIranRoutes } from './iran.js';
+import { registerCustomerClubOfflineRoutes } from './customer_club_offline.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
@@ -18,7 +19,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: true, credentials: false }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '12mb' }));
 
 async function audit(req, action, entityType, entityId = null, beforeValue = null, afterValue = null) {
   try {
@@ -44,7 +45,8 @@ async function bootstrapAdmin() {
     await conn.execute(`INSERT INTO roles(code,title,is_system) VALUES
       ('SUPER_ADMIN','مدیر کل سیستم',1),('FINANCE_MANAGER','مدیر مالی',1),('ACCOUNTANT','حسابدار',1),
       ('SALES_MANAGER','مدیر فروش',1),('SALES_PERSON','فروشنده',1),('WAREHOUSE_MANAGER','مدیر انبار',1),
-      ('LOGISTICS_MANAGER','مدیر لجستیک',1),('HR_MANAGER','مدیر منابع انسانی',1)
+      ('LOGISTICS_MANAGER','مدیر لجستیک',1),('HR_MANAGER','مدیر منابع انسانی',1),
+      ('CRM_MANAGER','مدیر ارتباط با مشتریان',1),('CUSTOMER_SERVICE','کارشناس خدمات مشتریان',1)
       ON DUPLICATE KEY UPDATE title=VALUES(title)`);
     const [users] = await conn.execute('SELECT id FROM users WHERE email=?',[adminEmail]); let userId=users[0]?.id;
     if(!userId){const [r]=await conn.execute('INSERT INTO users(company_id,full_name,email,password_hash,is_active) VALUES (?,?,?,?,1)',[companyId,adminName,adminEmail,passwordHash]);userId=r.insertId;}
@@ -81,6 +83,7 @@ app.get('/api/finance/trial-balance',requireRole('ACCOUNTANT','FINANCE_MANAGER')
 registerEnterpriseRoutes(app);
 registerIranExtensionRoutes(app);
 registerIranRoutes(app);
+registerCustomerClubOfflineRoutes(app);
 app.use('/api',(req,res)=>res.status(404).json({error:'API_NOT_FOUND',path:req.path}));
 app.use(express.static(webDir,{index:'index.html',maxAge:process.env.NODE_ENV==='production'?'1h':0}));
 app.use((_req,res)=>res.sendFile(path.join(webDir,'index.html')));
