@@ -99,7 +99,7 @@ jobs:
           if(Object.prototype.hasOwnProperty.call(x,'cvv2')) throw new Error('CVV2 must not be persisted or returned');
           NODE
 
-          INV=$(curl -fsS "$B/api/iran/sales-invoices?page=1&pageSize=10" -H "$AUTH" | node -pe "const j=JSON.parse(require('fs').readFileSync(0,'utf8')); (j.rows||[])[0]?.id||''")
+          INV=$(mysql -h127.0.0.1 -P3306 -utarazpad -ptarazpad -Dtarazpad -Nse "SELECT id FROM sales_invoices ORDER BY id DESC LIMIT 1")
           test -n "$INV"
           curl -fsS "$B/api/iran/print/sales-invoices/$INV" -H "$AUTH" >/tmp/invoice-print.json
           node - <<'NODE'
