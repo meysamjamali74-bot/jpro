@@ -2,15 +2,18 @@ name: Enterprise 1.8 Detail and Printing Gate
 
 on:
   push:
-    branches: [enterprise-phase-1-8-ui-documents-v2]
+    branches: [enterprise-phase-1-8-ui-documents-v2, enterprise-phase-1-8-release]
   pull_request:
     paths:
       - 'database/042_masterdata_commercial_documents.sql'
       - 'database/043_masterdata_compatibility_upgrade.sql'
-      - 'database/044_bank_account_master_details.sql'
+      - 'database/044_company_bank_account_details.sql'
       - 'apps/api/src/commercial_master_v8.js'
+      - 'apps/api/src/bank_master_v8.js'
+      - 'apps/api/src/print_master_v8.js'
       - 'apps/api/src/iran_extensions.js'
       - 'apps/web/phase18-ui.js'
+      - 'apps/web/phase18-final-ui.js'
       - 'apps/web/fa-overlay.js'
       - '.github/workflows/phase18-detail-gate.yml'
   workflow_dispatch:
@@ -50,8 +53,11 @@ jobs:
       - name: Syntax check
         run: |
           node --check apps/api/src/commercial_master_v8.js
+          node --check apps/api/src/bank_master_v8.js
+          node --check apps/api/src/print_master_v8.js
           node --check apps/api/src/iran_extensions.js
           node --check apps/web/phase18-ui.js
+          node --check apps/web/phase18-final-ui.js
           node --check apps/web/fa-overlay.js
       - name: Fresh migration and startup
         run: |
@@ -84,9 +90,16 @@ jobs:
 
           INV=$(curl -fsS -X POST "$B/api/iran/sales-invoices" "${H[@]}" -d "{\"customerPartyId\":$PARTY,\"invoiceClassification\":\"NON_OFFICIAL\",\"settlementType\":\"CASH\",\"invoiceDate\":\"2026-08-20\",\"lines\":[{\"productId\":$PROD,\"qty\":2,\"unitPrice\":8900000}]}" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
           curl -fsS "$B/api/iran/sales-invoices/$INV/print-model" "${H[@]}" >/tmp/invoice.json
+          curl -fsS "$B/api/iran/print/sales-invoices/$INV" "${H[@]}" >/tmp/invoice-final.json
+
+          BANK=$(curl -fsS -X POST "$B/api/iran/treasury/bank-accounts" "${H[@]}" -d '{"code":"BANK18","bankName":"بانک ملت","accountTitle":"حساب جاری اصلی","branchName":"مرکزی","branchCode":"001","accountType":"جاری","accountHolder":"شرکت تست","accountNo":"123456789","iban":"IR180120000000001234567890","cardNo":"6104330000000018","currency":"IRR","showOnSalesInvoice":true,"showOnReceipt":true,"isDefault":true,"isActive":true}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
+          test "$BANK" -gt 0
+          curl -fsS "$B/api/iran/treasury/bank-accounts?q=ملت" "${H[@]}" >/tmp/banks.json
 
           WB=$(curl -fsS -X POST "$B/api/iran/logistics/waybills" "${H[@]}" -d "{\"salesInvoiceId\":$INV,\"receiverPartyId\":$PARTY,\"origin\":\"انبار مرکزی\",\"destination\":\"تهران، نشانی تست\",\"packageCount\":2,\"grossWeight\":22.5,\"netWeight\":20,\"freightAmount\":500000,\"insuranceAmount\":100000,\"status\":\"ISSUED\"}" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
           curl -fsS "$B/api/iran/logistics/waybills/$WB/print-model" "${H[@]}" >/tmp/wb.json
+          curl -fsS "$B/api/iran/print/waybills/$WB" "${H[@]}" >/tmp/wb-final.json
+          curl -fsS "$B/api/iran/print/price-lists/$PL" "${H[@]}" >/tmp/pl-final.json
           curl -fsS "$B/api/iran/commercial/product-profitability?from=2026-08-01&to=2026-08-31" "${H[@]}" >/tmp/profit.json
           curl -fsS "$B/api/iran/commercial/product-profitability/$PROD/details?from=2026-08-01&to=2026-08-31" "${H[@]}" >/tmp/detail.json
 
@@ -103,8 +116,16 @@ jobs:
           if(pl.items.length!==1||!pl.items[0].image_url) throw new Error('visual price list incomplete');
           const iv=j('/tmp/invoice.json');
           if(iv.lines.length!==1||iv.header.customer_name!=='مشتری نمونه جزئیات') throw new Error('invoice print model incomplete');
+          const ivf=j('/tmp/invoice-final.json');
+          if(ivf.lines.length!==1||ivf.security.cvvStored!==false) throw new Error('authoritative invoice print model invalid');
+          const banks=j('/tmp/banks.json');
+          if(!banks.some(x=>x.code==='BANK18'&&x.show_on_sales_invoice===1)) throw new Error('detailed company bank master invalid');
           const wb=j('/tmp/wb.json');
           if(!wb.waybill||wb.lines.length!==1) throw new Error('waybill print model incomplete');
+          const wbf=j('/tmp/wb-final.json');
+          if(!wbf.waybill||wbf.lines.length!==1) throw new Error('authoritative waybill print model invalid');
+          const plf=j('/tmp/pl-final.json');
+          if(plf.items.length!==1||!plf.items[0].image_url) throw new Error('authoritative price-list print model invalid');
           const pf=j('/tmp/profit.json'),dt=j('/tmp/detail.json');
           if(!Array.isArray(pf.rows)||!Array.isArray(dt.sales)) throw new Error('profitability report/drilldown invalid');
           const pp=j('/tmp/profiles.json');
@@ -114,10 +135,12 @@ jobs:
       - name: Web detail smoke
         run: |
           grep -q "load('/phase18-ui.js')" apps/web/fa-overlay.js
+          grep -q "load('/phase18-final-ui.js')" apps/web/fa-overlay.js
           grep -q 'خرید، فروش و سود کالا' apps/web/phase18-ui.js
           grep -q 'لیست قیمت تصویری' apps/web/phase18-ui.js
           grep -q 'بارنامه و حمل' apps/web/phase18-ui.js
-          grep -q 'مرکز چاپ اسناد' apps/web/phase18-ui.js
+          grep -q 'مرکز چاپ اسناد' apps/web/phase18-final-ui.js
+          grep -q 'حساب‌های بانکی' apps/web/phase18-final-ui.js
       - name: Diagnostics
         if: always()
         run: tail -n 300 /tmp/tarazpad.log || true
