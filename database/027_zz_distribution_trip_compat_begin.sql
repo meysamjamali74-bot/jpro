@@ -1,21 +1,12 @@
--- Compatibility bridge for Enterprise 1.5 migration 028.
--- Fresh schemas use `trips`; migration 028 historically referenced
--- `distribution_trips`. Rename only for the narrow migration window.
--- Existing/upgraded schemas are left untouched when both/other states exist.
+-- TARAZPAD Enterprise 1.8 compatibility marker.
+--
+-- The canonical distribution trip table is `trips`.
+-- Migration 028 now references `trips` directly, so no temporary rename is
+-- permitted here. Keeping this migration as a no-op preserves ordered migration
+-- history for databases that have already recorded the filename.
+--
+-- Older installations that still contain a legacy `distribution_trips` table
+-- are handled by explicit upgrade migrations; Fresh Install must never rename
+-- the canonical `trips` table before migration 028.
 
-SET @trz_has_trips := (
-  SELECT COUNT(*) FROM information_schema.TABLES
-  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='trips' AND TABLE_TYPE='BASE TABLE'
-);
-SET @trz_has_distribution_trips := (
-  SELECT COUNT(*) FROM information_schema.TABLES
-  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='distribution_trips' AND TABLE_TYPE='BASE TABLE'
-);
-SET @trz_trip_compat_sql := IF(
-  @trz_has_trips=1 AND @trz_has_distribution_trips=0,
-  'RENAME TABLE trips TO distribution_trips',
-  'SELECT 1'
-);
-PREPARE trz_trip_compat_stmt FROM @trz_trip_compat_sql;
-EXECUTE trz_trip_compat_stmt;
-DEALLOCATE PREPARE trz_trip_compat_stmt;
+SELECT 1 AS canonical_trips_table_preserved;
