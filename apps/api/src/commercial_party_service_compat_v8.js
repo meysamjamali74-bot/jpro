@@ -7,9 +7,33 @@ const read=requireRole('SUPER_ADMIN','FINANCE_MANAGER','ACCOUNTANT','SALES_MANAG
 const master=requireRole('SUPER_ADMIN','FINANCE_MANAGER','SALES_MANAGER','WAREHOUSE_MANAGER','PURCHASE_MANAGER');
 
 export function registerCommercialCompatV8Routes(app){
+  // Stable v1.8 party list owner. It is registered before the legacy Iran list route
+  // and deliberately interpolates only validated integer LIMIT/OFFSET values because
+  // MySQL 8.4 can reject those placeholders in this prepared-statement shape.
+  app.get('/api/iran/parties',wrap(async(req,res)=>{
+    const page=Math.max(1,Number(req.query.page||1));
+    const pageSize=Math.min(200,Math.max(10,Number(req.query.pageSize||50)));
+    const offset=(page-1)*pageSize;
+    const q=txt(req.query.q),role=txt(req.query.role);
+    const where=['p.company_id=?','p.is_deleted=0'];
+    const params=[req.user.companyId];
+    if(q){const like=`%${q}%`;where.push('(p.name LIKE ? OR p.code LIKE ? OR p.national_id LIKE ? OR p.economic_code LIKE ? OR p.mobile LIKE ?)');params.push(like,like,like,like,like)}
+    if(role){where.push('EXISTS(SELECT 1 FROM party_roles pr2 WHERE pr2.party_id=p.id AND pr2.role_code=?)');params.push(role)}
+    const whereSql=where.join(' AND ');
+    const [[count]]=await pool.execute(`SELECT COUNT(*) total FROM parties p WHERE ${whereSql}`,params);
+    const [rows]=await pool.execute(`SELECT p.*,GROUP_CONCAT(pr.role_code ORDER BY pr.role_code) roles,cp.credit_limit,cp.payment_terms_days,sp.bank_iban supplier_iban,ep.personnel_no
+      FROM parties p
+      LEFT JOIN party_roles pr ON pr.party_id=p.id
+      LEFT JOIN customer_profiles cp ON cp.party_id=p.id
+      LEFT JOIN supplier_profiles sp ON sp.party_id=p.id
+      LEFT JOIN employee_profiles ep ON ep.party_id=p.id
+      WHERE ${whereSql}
+      GROUP BY p.id ORDER BY p.id DESC LIMIT ${pageSize} OFFSET ${offset}`,params);
+    res.json({rows,total:n(count.total),page,pageSize});
+  }));
+
   // Party profile/detail routes are intentionally owned by commercial_master_v8.
-  // This compatibility layer only keeps service-as-product endpoints that are not
-  // duplicated there, preventing legacy column mappings from shadowing v1.8 schema.
+  // This compatibility layer keeps service-as-product endpoints that are not duplicated there.
   app.get('/api/iran/master/services',read,wrap(async(req,res)=>{
     const q=`%${txt(req.query.q)}%`;
     const [rows]=await pool.execute(`SELECT p.id,p.sku code,p.name,p.unit,p.sale_price,p.goods_service_id,p.unit_code,p.vat_status,p.default_vat_rate,p.is_active,sp.commission_pct,sp.revenue_account_id,a.code revenue_account_code,a.title revenue_account_title,sp.estimated_duration_minutes,sp.service_notes FROM products p LEFT JOIN service_profiles sp ON sp.product_id=p.id LEFT JOIN accounts a ON a.id=sp.revenue_account_id WHERE p.company_id=? AND p.is_deleted=0 AND p.product_type='SERVICE' AND (?='%%' OR p.name LIKE ? OR p.sku LIKE ?) ORDER BY p.name`,[req.user.companyId,q,q,q]);
