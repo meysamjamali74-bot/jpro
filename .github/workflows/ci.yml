@@ -64,9 +64,30 @@ jobs:
           IR_CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/parties -H "$AUTH" -H 'content-type: application/json' -d '{"name":"شرکت خریدار رسمی","partyType":"LEGAL","code":"C-100","nationalId":"14009999999","economicCode":"411199999999","registrationNo":"556677","postalCode":"1499999999","province":"تهران","city":"تهران","address":"تهران","mobile":"09120000000","creditLimit":5000000,"paymentTermsDays":30,"roles":["CUSTOMER"]}' | jq -r .id)
           IR_PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/products -H "$AUTH" -H 'content-type: application/json' -d '{"sku":"IR-001","name":"کالای مشمول رسمی","productType":"GOODS","unit":"عدد","goodsServiceId":"1234567890123","unitCode":"1627","vatStatus":"STANDARD","defaultVatRate":10,"purchasePrice":70000,"salePrice":100000}' | jq -r .id)
 
+          # Enterprise v5 correctly blocks posting physical goods without a warehouse/stock issue.
+          # Seed a real warehouse balance so this integration test follows the production WMS path
+          # instead of weakening the compliance gate just to preserve a legacy test shortcut.
+          IR_WAREHOUSE=$(IR_PRODUCT="$IR_PRODUCT" node - <<'NODE'
+          const mysql=require('./apps/api/node_modules/mysql2/promise');
+          (async()=>{
+            const db=await mysql.createConnection({host:process.env.MYSQL_HOST,port:Number(process.env.MYSQL_PORT),user:process.env.MYSQL_USER,password:process.env.MYSQL_PASSWORD,database:process.env.MYSQL_DATABASE});
+            const [c]=await db.execute('SELECT id FROM companies ORDER BY id LIMIT 1');
+            const companyId=c[0].id;
+            await db.execute("INSERT INTO warehouses(company_id,code,name,warehouse_type,is_active) VALUES (?,'CI-MAIN','انبار تست یکپارچه','GENERAL',1) ON DUPLICATE KEY UPDATE name=VALUES(name),is_active=1",[companyId]);
+            const [w]=await db.execute("SELECT id FROM warehouses WHERE company_id=? AND code='CI-MAIN'",[companyId]);
+            const warehouseId=w[0].id,productId=Number(process.env.IR_PRODUCT);
+            await db.execute(`INSERT INTO inventory_balances(company_id,warehouse_id,product_id,batch_no,expiry_date,on_hand_qty,reserved_qty,quarantine_qty,damaged_qty,average_cost)
+              VALUES (?,?,?,NULL,NULL,10,0,0,0,70000)
+              ON DUPLICATE KEY UPDATE on_hand_qty=10,reserved_qty=0,quarantine_qty=0,damaged_qty=0,average_cost=70000`,[companyId,warehouseId,productId]);
+            console.log(warehouseId);await db.end();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+          )
+          test -n "$IR_WAREHOUSE"
+
           IR_INVOICE=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/sales-invoices -H "$AUTH" -H 'content-type: application/json' -d "{\"customerPartyId\":$IR_CUSTOMER,\"invoiceDate\":\"2026-08-19\",\"dueDate\":\"2026-09-18\",\"invoiceClassification\":\"OFFICIAL\",\"taxInvoiceType\":\"TYPE_1\",\"settlementType\":\"CREDIT\",\"lines\":[{\"productId\":$IR_PRODUCT,\"qty\":2,\"unitPrice\":100000,\"discountAmount\":0}]}" | jq -r .id)
           curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/validate" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.valid == true and .totals.gross == 200000 and .totals.tax == 20000 and .totals.net == 220000'
-          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/post" -H "$AUTH" -H 'content-type: application/json' -d '{}' | jq -e '.ok == true and .debit == .credit and .amounts.NET_TOTAL == 220000 and .amounts.COGS_TOTAL == 140000'
+          curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$IR_INVOICE/post" -H "$AUTH" -H 'content-type: application/json' -d "{\"warehouseId\":$IR_WAREHOUSE}" | jq -e '.ok == true and .debit == .credit and .amounts.NET_TOTAL == 220000 and .amounts.COGS_TOTAL == 140000'
           curl -fsS --get 'http://127.0.0.1:8080/api/iran/sales-invoices' -H "$AUTH" --data-urlencode 'classification=OFFICIAL' --data-urlencode 'q=خریدار' --data-urlencode 'page=1' --data-urlencode 'pageSize=25' | jq -e '.rows | map(select(.invoice_classification=="OFFICIAL" and .tax_total==20000)) | length == 1'
 
           curl -fsS http://127.0.0.1:8080/api/finance/trial-balance -H "$AUTH" | jq -e 'map(select(.code=="110100" and .debit==420000)) | length == 1'
