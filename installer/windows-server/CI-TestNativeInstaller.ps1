@@ -34,6 +34,14 @@ if($unexpected){throw 'Initial credentials file grants access outside SYSTEM/Adm
 if(!(Get-ScheduledTask -TaskName 'Tarazpad ERP Server' -ErrorAction SilentlyContinue)){throw 'Tarazpad startup task missing.'}
 if(!(Get-ScheduledTask -TaskName 'Tarazpad ERP Daily Backup' -ErrorAction SilentlyContinue)){throw 'Tarazpad backup task missing.'}
 
+# Run the exact root-only database guard stage directly once before invoking NSIS.
+# This makes MySQL/PowerShell errors visible in the Actions log instead of reducing
+# them to an opaque Setup.exe exit code. The packaged setup must still run the same
+# stage again successfully, so idempotency remains fully tested.
+Write-Host '[CI] Running database guard installation directly so failures are visible...'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $InstallRoot 'Install-DatabaseGuards.ps1')
+if($LASTEXITCODE -ne 0){ throw "Direct database guard installation failed: $LASTEXITCODE" }
+
 Write-Host '[CI] Running packaged Enterprise Setup.exe over existing installation...'
 $p=Start-Process $Exe -ArgumentList '/S' -Wait -PassThru
 if($p.ExitCode -ne 0){throw "Setup EXE idempotency run failed: $($p.ExitCode)"}
