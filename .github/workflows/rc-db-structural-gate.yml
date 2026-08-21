@@ -1,7 +1,7 @@
 name: Tarazpad RC Database Structural Gate
 on:
   push:
-    branches: [enterprise-release-candidate-1-7]
+    branches: [enterprise-release-candidate-1-7, enterprise-phase-1-8-release]
   pull_request:
 
 jobs:
@@ -49,13 +49,19 @@ jobs:
       - name: Fresh-schema invariants
         env: { MYSQL_PWD: rcstruct_db_2026 }
         run: |
-          docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -utarazpad tarazpad -N -e "SELECT COUNT(*) FROM (SELECT CONSTRAINT_NAME,COUNT(*) c FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA='tarazpad' GROUP BY CONSTRAINT_NAME HAVING c>1) q; SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='tarazpad' AND TRIGGER_NAME LIKE 'trg_journal%hard_close%'; SELECT COUNT(*) FROM financial_statement_templates WHERE code IN ('STD_PL','STD_BS'); SELECT COUNT(*) FROM compliance_obligation_types WHERE code IN ('IR_VAT','IR_TAXPAYER_INVOICE','IR_SALARY_TAX','IR_SOCIAL_SECURITY','IR_CORPORATE_TAX'); SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='tarazpad' AND TABLE_NAME IN ('sales_fulfillment_allocations','inventory_cost_layers','period_close_runs','year_end_close_runs','compliance_periods');" >/tmp/struct-inv
+          docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -utarazpad tarazpad -N -e "SELECT COUNT(*) FROM (SELECT CONSTRAINT_NAME,COUNT(*) c FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA='tarazpad' GROUP BY CONSTRAINT_NAME HAVING c>1) q; SELECT COUNT(*) FROM financial_statement_templates WHERE code IN ('STD_PL','STD_BS'); SELECT COUNT(*) FROM compliance_obligation_types WHERE code IN ('IR_VAT','IR_TAXPAYER_INVOICE','IR_SALARY_TAX','IR_SOCIAL_SECURITY','IR_CORPORATE_TAX'); SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='tarazpad' AND TABLE_NAME IN ('sales_fulfillment_allocations','inventory_cost_layers','period_close_runs','year_end_close_runs','compliance_periods');" >/tmp/struct-inv
           cat /tmp/struct-inv
           test "$(sed -n '1p' /tmp/struct-inv)" -eq 0
-          test "$(sed -n '2p' /tmp/struct-inv)" -ge 3
-          test "$(sed -n '3p' /tmp/struct-inv)" -eq 2
+          test "$(sed -n '2p' /tmp/struct-inv)" -eq 2
+          test "$(sed -n '3p' /tmp/struct-inv)" -eq 5
           test "$(sed -n '4p' /tmp/struct-inv)" -eq 5
-          test "$(sed -n '5p' /tmp/struct-inv)" -eq 5
+      - name: Hard-close guard architecture invariant
+        run: |
+          set -euo pipefail
+          grep -q "HARD_CLOSED" apps/api/src/fiscal_lock_guard_v8.js
+          test -s installer/windows-server/HardClose-DatabaseGuards.sql
+          grep -q "CREATE TRIGGER" installer/windows-server/HardClose-DatabaseGuards.sql
+          grep -q "Install-DatabaseGuards.ps1" installer/windows-server/TarazpadServer.nsi
       - name: Per-entry balancing invariant helper
         env: { MYSQL_PWD: rcstruct_db_2026 }
         run: |
