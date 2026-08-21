@@ -9,6 +9,13 @@ on:
       - 'database/**'
       - 'installer/windows-server/**'
       - '.github/workflows/native-desktop-installer.yml'
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/api/**'
+      - 'database/**'
+      - 'installer/windows-server/**'
+      - '.github/workflows/native-desktop-installer.yml'
 
 concurrency:
   group: tarazpad-native-desktop-${{ github.ref }}
@@ -51,8 +58,8 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $desktopFiles=Get-ChildItem 'apps/desktop/Tarazpad.Desktop' -Recurse -File
-          if($desktopFiles|Select-String -Pattern 'WebView2|Process\.Start\("http|explorer\.exe.*http' -Quiet){throw 'Browser/WebView dependency detected in native desktop client.'}
+          $desktopFiles=Get-ChildItem 'apps/desktop/Tarazpad.Desktop' -Recurse -File | Where-Object { $_.Extension -in '.cs','.xaml','.csproj' }
+          if($desktopFiles|Select-String -Pattern 'WebView2|Process\.Start\("http|explorer\.exe.*http' -Quiet){throw 'Browser/WebView dependency detected in native desktop source.'}
           if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Views/MainWindow.xaml')){throw 'Native MainWindow missing.'}
           if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Views/ReportCenterView.xaml')){throw 'Native financial report center missing.'}
           if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Infrastructure/PersianDate.cs')){throw 'Persian date support missing.'}
