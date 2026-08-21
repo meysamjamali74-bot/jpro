@@ -1,7 +1,7 @@
 name: Tarazpad CI
 on:
   push:
-    branches: [main, tarazpad-v1, enterprise-phase-1-1, enterprise-phase-1-2]
+    branches: [main, tarazpad-v1, enterprise-phase-1-1, enterprise-phase-1-2, enterprise-phase-1-8-release]
   pull_request:
 jobs:
   test:
