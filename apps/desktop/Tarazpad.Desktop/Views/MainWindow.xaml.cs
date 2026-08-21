@@ -98,7 +98,7 @@ public partial class MainWindow : Window
     }
 
     private static ModuleDefinition RequireDefinition(string key)
-        => ModuleCatalog.Get(key) ?? throw new InvalidOperationException($"ماژول {key} تعریف نشده است.");
+        => NativeModuleOverrides.Get(key) ?? throw new InvalidOperationException($"ماژول {key} تعریف نشده است.");
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
@@ -114,7 +114,7 @@ public partial class MainWindow : Window
                 case TaxCenterView t: await t.RefreshAsync(); break;
                 case SettingsView s: await s.RefreshAsync(); break;
             }
-            StatusBarText.Text = $"بروزرسانی شد - {DateTime.Now:HH:mm:ss}";
+            StatusBarText.Text = $"بروزرسانی شد - {PersianDate.Today()} {DateTime.Now:HH:mm:ss}";
         }
         catch (Exception ex)
         {
