@@ -94,9 +94,29 @@ CREATE TABLE IF NOT EXISTS period_close_results (
   CONSTRAINT fk_pcres_user FOREIGN KEY(resolved_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-ALTER TABLE accounts
-  ADD COLUMN statement_section ENUM('CURRENT_ASSET','NONCURRENT_ASSET','CURRENT_LIABILITY','NONCURRENT_LIABILITY','EQUITY','OPERATING_REVENUE','COST_OF_SALES','OPERATING_EXPENSE','OTHER_REVENUE','OTHER_EXPENSE','TAX','UNASSIGNED') NOT NULL DEFAULT 'UNASSIGNED',
-  ADD COLUMN cash_flow_activity ENUM('OPERATING','INVESTING','FINANCING','CASH','UNASSIGNED') NOT NULL DEFAULT 'UNASSIGNED';
+-- Retry-safe upgrade compatibility: DDL before this point may already have been
+-- committed if an older copy of this migration stopped while creating triggers.
+SET @has_statement_section := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='accounts' AND COLUMN_NAME='statement_section'
+);
+SET @sql := IF(@has_statement_section=0,
+  "ALTER TABLE accounts ADD COLUMN statement_section ENUM('CURRENT_ASSET','NONCURRENT_ASSET','CURRENT_LIABILITY','NONCURRENT_LIABILITY','EQUITY','OPERATING_REVENUE','COST_OF_SALES','OPERATING_EXPENSE','OTHER_REVENUE','OTHER_EXPENSE','TAX','UNASSIGNED') NOT NULL DEFAULT 'UNASSIGNED'",
+  'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_cash_flow_activity := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='accounts' AND COLUMN_NAME='cash_flow_activity'
+);
+SET @sql := IF(@has_cash_flow_activity=0,
+  "ALTER TABLE accounts ADD COLUMN cash_flow_activity ENUM('OPERATING','INVESTING','FINANCING','CASH','UNASSIGNED') NOT NULL DEFAULT 'UNASSIGNED'",
+  'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS financial_statement_templates (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -194,30 +214,8 @@ UPDATE accounts SET statement_section='OTHER_REVENUE' WHERE code='420100';
 UPDATE accounts SET statement_section='COST_OF_SALES' WHERE code='510100';
 UPDATE accounts SET statement_section='OPERATING_EXPENSE' WHERE account_type='EXPENSE' AND statement_section='UNASSIGNED';
 
-DELIMITER $$
-CREATE TRIGGER trg_journal_hard_close_insert
-BEFORE INSERT ON journal_entries
-FOR EACH ROW
-BEGIN
-  IF NEW.status IN ('POSTED','LOCKED') AND EXISTS(
-    SELECT 1 FROM fiscal_periods fp
-    WHERE fp.company_id=NEW.company_id AND fp.status='HARD_CLOSED'
-      AND COALESCE(NEW.posting_date,NEW.entry_date) BETWEEN fp.start_date AND fp.end_date
-  ) THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='ACCOUNTING_PERIOD_HARD_CLOSED';
-  END IF;
-END$$
-
-CREATE TRIGGER trg_journal_hard_close_update
-BEFORE UPDATE ON journal_entries
-FOR EACH ROW
-BEGIN
-  IF NEW.status IN ('POSTED','LOCKED') AND EXISTS(
-    SELECT 1 FROM fiscal_periods fp
-    WHERE fp.company_id=NEW.company_id AND fp.status='HARD_CLOSED'
-      AND COALESCE(NEW.posting_date,NEW.entry_date) BETWEEN fp.start_date AND fp.end_date
-  ) AND NOT (OLD.status IN ('POSTED','LOCKED') AND OLD.status=NEW.status AND COALESCE(OLD.posting_date,OLD.entry_date)=COALESCE(NEW.posting_date,NEW.entry_date)) THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='ACCOUNTING_PERIOD_HARD_CLOSED';
-  END IF;
-END$$
-DELIMITER ;
+-- Portable migrations must not require SUPER/TRIGGER privileges. HARD_CLOSED
+-- periods are guarded by the application on all supported write paths. Native
+-- Windows installs add the database-level defense-in-depth triggers afterwards
+-- with the local MySQL administrative account (Install-DatabaseGuards.ps1).
+SELECT 1 AS hard_close_portable_migration_enabled;
