@@ -73,11 +73,10 @@ public partial class DataModuleView : UserControl
 
     private void Grid_AutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
     {
-        var hasFriendlyTitle = Definition.ColumnTitles?.TryGetValue(e.PropertyName, out var title) == true;
-        if (hasFriendlyTitle) e.Column.Header = title;
+        string? title = null;
+        var hasFriendlyTitle = Definition.ColumnTitles is not null && Definition.ColumnTitles.TryGetValue(e.PropertyName, out title);
+        if (hasFriendlyTitle && title is not null) e.Column.Header = title;
 
-        // Internal relational/audit IDs are useful for the API but clutter an accounting grid.
-        // Keep identifiers only when the module explicitly gives them a friendly title.
         if (!hasFriendlyTitle && (e.PropertyName.Equals("id", StringComparison.OrdinalIgnoreCase)
             || e.PropertyName.Equals("company_id", StringComparison.OrdinalIgnoreCase)
             || e.PropertyName.Equals("created_by", StringComparison.OrdinalIgnoreCase)
@@ -115,12 +114,15 @@ public partial class DataModuleView : UserControl
         if (dialog.ShowDialog() != true) return;
 
         var sb = new StringBuilder();
-        sb.AppendLine(string.Join(",", _table.Columns.Cast<DataColumn>().Select(c => Csv(Definition.ColumnTitles?.TryGetValue(c.ColumnName, out var t) == true ? t : c.ColumnName))));
+        sb.AppendLine(string.Join(",", _table.Columns.Cast<DataColumn>().Select(c => Csv(FriendlyColumnName(c.ColumnName)))));
         foreach (DataRow row in _table.Rows)
             sb.AppendLine(string.Join(",", _table.Columns.Cast<DataColumn>().Select(c => Csv(Convert.ToString(row[c], CultureInfo.InvariantCulture) ?? string.Empty))));
         File.WriteAllText(dialog.FileName, "\uFEFF" + sb, new UTF8Encoding(false));
         FooterText.Text = $"خروجی ذخیره شد: {dialog.FileName}";
     }
+
+    private string FriendlyColumnName(string name)
+        => Definition.ColumnTitles is not null && Definition.ColumnTitles.TryGetValue(name, out var title) ? title : name;
 
     private void SetLoading(bool loading)
     {
