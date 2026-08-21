@@ -107,7 +107,12 @@ jobs:
 
           INV=$(mysql -h127.0.0.1 -P3306 -utarazpad -ptarazpad -Dtarazpad -Nse "SELECT id FROM sales_invoices ORDER BY id DESC LIMIT 1")
           test -n "$INV"
-          curl -fsS "$B/api/iran/print/sales-invoices/$INV" -H "$AUTH" >/tmp/invoice-print.json
+          PRINT_STATUS=$(curl -sS -o /tmp/invoice-print.json -w '%{http_code}' "$B/api/iran/print/sales-invoices/$INV" -H "$AUTH")
+          if [ "$PRINT_STATUS" -lt 200 ] || [ "$PRINT_STATUS" -ge 300 ]; then
+            echo "Invoice print model failed with HTTP $PRINT_STATUS"
+            cat /tmp/invoice-print.json
+            exit 1
+          fi
           node - <<'NODE'
           const j=require('/tmp/invoice-print.json');
           if(!Array.isArray(j.lines)||!j.lines.length) throw new Error('invoice print lines missing');
