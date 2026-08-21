@@ -1,7 +1,7 @@
 $ErrorActionPreference='Stop'
 $RepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Stage=(Resolve-Path (Join-Path $PSScriptRoot 'build\staging')).Path
-$Exe=(Resolve-Path (Join-Path $PSScriptRoot 'build\Tarazpad-ERP-Web-Server-Setup-0.2.0.exe')).Path
+$Exe=(Resolve-Path (Join-Path $PSScriptRoot 'build\Tarazpad-ERP-Enterprise-Setup-1.8.0.exe')).Path
 $InstallRoot='C:\ProgramData\Tarazpad\server'
 
 Write-Host '[CI] Preparing direct native-install test root...'
@@ -25,11 +25,16 @@ if(!(Test-Path $cfgPath)){throw 'Server config missing.'}
 $before=Get-Content $cfgPath -Raw | ConvertFrom-Json
 $svc=Get-Service 'TarazpadMySQL' -ErrorAction Stop
 if($svc.Status -ne 'Running'){throw 'TarazpadMySQL service is not running.'}
-if(!(Test-Path (Join-Path $InstallRoot 'INITIAL-LOGIN.txt'))){throw 'Initial credentials file missing.'}
+$credPath=Join-Path $InstallRoot 'INITIAL-LOGIN.txt'
+if(!(Test-Path $credPath)){throw 'Initial credentials file missing.'}
+$credAcl=Get-Acl $credPath
+if(-not $credAcl.AreAccessRulesProtected){throw 'Initial credentials file still inherits permissions.'}
+$unexpected=$credAcl.Access|Where-Object{$_.AccessControlType -eq 'Allow' -and $_.IdentityReference.Value -notmatch '(?i)(SYSTEM|Administrators)$'}
+if($unexpected){throw 'Initial credentials file grants access outside SYSTEM/Administrators.'}
 if(!(Get-ScheduledTask -TaskName 'Tarazpad ERP Server' -ErrorAction SilentlyContinue)){throw 'Tarazpad startup task missing.'}
 if(!(Get-ScheduledTask -TaskName 'Tarazpad ERP Daily Backup' -ErrorAction SilentlyContinue)){throw 'Tarazpad backup task missing.'}
 
-Write-Host '[CI] Running packaged Setup.exe over existing installation...'
+Write-Host '[CI] Running packaged Enterprise Setup.exe over existing installation...'
 $p=Start-Process $Exe -ArgumentList '/S' -Wait -PassThru
 if($p.ExitCode -ne 0){throw "Setup EXE idempotency run failed: $($p.ExitCode)"}
 $after=Get-Content $cfgPath -Raw | ConvertFrom-Json
@@ -39,4 +44,13 @@ if($before.jwtSecret -ne $after.jwtSecret){throw 'Idempotency failure: JWT secre
 
 $health2=Invoke-RestMethod 'http://127.0.0.1:8080/api/health' -TimeoutSec 10
 if(!$health2.ok){throw 'Health check failed after Setup.exe second run.'}
-Write-Host "[CI] PASS - prerequisites/source: MySQL $($after.mysqlVersion) source=$($after.mysqlSource); existing configuration preserved."
+
+Write-Host '[CI] Verifying HARD_CLOSED database guards installed by packaged Setup...'
+$env:MYSQL_PWD=$after.mysqlPassword
+$triggerCount=& $after.mysqlExe --protocol=tcp --host=$after.mysqlHost --port=$after.mysqlPort --user=$after.mysqlUser --database=$after.mysqlDatabase --batch --skip-column-names -e "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_journal_line_hard_close_insert','trg_journal_line_hard_close_update','trg_journal_line_hard_close_delete');"
+$mysqlExit=$LASTEXITCODE
+Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
+if($mysqlExit -ne 0){throw "Database guard verification query failed: $mysqlExit"}
+if([int]($triggerCount|Select-Object -Last 1) -lt 3){throw "Expected HARD_CLOSED journal triggers were not all installed. Found: $triggerCount"}
+
+Write-Host "[CI] PASS - Enterprise 1.8 installer; MySQL $($after.mysqlVersion) source=$($after.mysqlSource); config/secrets preserved; DB guards verified."
