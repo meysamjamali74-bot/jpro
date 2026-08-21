@@ -83,6 +83,7 @@ jobs:
           $null=[scriptblock]::Create((Get-Content 'installer/windows-server/CI-TestNativeInstaller.ps1' -Raw))
           node --check apps/api/src/server.js
           node --check apps/api/src/db.js
+          node --check apps/api/src/auth.js
           node --check apps/web/app.js
           npm --prefix apps/api test
           if(!(Test-Path 'installer/windows-server/build/staging/app/apps/api/node_modules/mysql2')){throw 'Production dependencies were not staged.'}
@@ -99,7 +100,7 @@ jobs:
           if(!$makensis){$makensis='C:\Program Files (x86)\NSIS\makensis.exe'}
           & $makensis 'TarazpadServer.nsi'
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          $exe='build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe'
+          $exe='build/Tarazpad-ERP-Web-Server-Setup-0.2.1.exe'
           if(!(Test-Path $exe)){throw 'Setup EXE not produced.'}
           Get-FileHash $exe -Algorithm SHA256 | Format-List | Out-File 'build/SHA256SUMS.txt'
 
@@ -122,9 +123,9 @@ jobs:
       - name: Upload native Windows web server setup
         uses: actions/upload-artifact@v4
         with:
-          name: Tarazpad-ERP-Native-Web-Server-Setup
+          name: Tarazpad-ERP-Native-Web-Server-Setup-0.2.1
           path: |
-            installer/windows-server/build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe
+            installer/windows-server/build/Tarazpad-ERP-Web-Server-Setup-0.2.1.exe
             installer/windows-server/build/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90
