@@ -5,22 +5,17 @@ on:
     branches: [enterprise-phase-1-8-ui-documents-v2, enterprise-phase-1-8-release]
   pull_request:
     paths:
-      - 'database/042_masterdata_commercial_documents.sql'
-      - 'database/043_masterdata_compatibility_upgrade.sql'
-      - 'database/044_company_bank_account_details.sql'
-      - 'apps/api/src/commercial_master_v8.js'
-      - 'apps/api/src/bank_master_v8.js'
-      - 'apps/api/src/print_master_v8.js'
-      - 'apps/api/src/iran_extensions.js'
-      - 'apps/web/phase18-ui.js'
-      - 'apps/web/phase18-final-ui.js'
-      - 'apps/web/fa-overlay.js'
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'database/**'
+      - 'scripts/e2e_phase18.mjs'
       - '.github/workflows/phase18-detail-gate.yml'
   workflow_dispatch:
 
 jobs:
   detail-gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       mysql:
         image: mysql:8.4
@@ -31,7 +26,7 @@ jobs:
           MYSQL_PASSWORD: tarazpad
         ports: ['3306:3306']
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
           --health-interval=5s --health-timeout=5s --health-retries=30
     env:
       MYSQL_HOST: 127.0.0.1
@@ -39,101 +34,83 @@ jobs:
       MYSQL_DATABASE: tarazpad
       MYSQL_USER: tarazpad
       MYSQL_PASSWORD: tarazpad
-      JWT_SECRET: phase18-detail-secret
+      JWT_SECRET: phase18_detail_secret_2026_long_enough
       TARAZPAD_ADMIN_EMAIL: admin@tarazpad.test
       TARAZPAD_ADMIN_PASSWORD: Phase18_Strong_Test_2026!
       TARAZPAD_ADMIN_NAME: مدیر تست ترازپاد
       PORT: 8080
+      TARAZPAD_URL: http://127.0.0.1:8080
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install
-      - name: Syntax check
+
+      - name: Install API dependencies
+        run: npm --prefix apps/api install
+
+      - name: Syntax and unit checks
         run: |
-          node --check apps/api/src/commercial_master_v8.js
-          node --check apps/api/src/bank_master_v8.js
-          node --check apps/api/src/print_master_v8.js
-          node --check apps/api/src/iran_extensions.js
-          node --check apps/web/phase18-ui.js
-          node --check apps/web/phase18-final-ui.js
-          node --check apps/web/fa-overlay.js
-      - name: Fresh migration and startup
+          set -euo pipefail
+          find apps/api/src apps/web -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check scripts/e2e_phase18.mjs
+          npm --prefix apps/api test
+
+      - name: Fresh MySQL migration and verified startup
         run: |
+          set -euo pipefail
           npm --prefix apps/api start >/tmp/tarazpad.log 2>&1 &
-          for i in $(seq 1 75); do
-            curl -fsS http://127.0.0.1:8080/api/health >/tmp/health.json && break
+          echo $! >/tmp/tarazpad.pid
+          ok=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/health.json; then
+              ok=1
+              break
+            fi
             sleep 2
           done
-          cat /tmp/health.json || { cat /tmp/tarazpad.log; exit 1; }
-      - name: Detailed commercial E2E
+          if [ "$ok" != "1" ]; then
+            echo 'Tarazpad API did not become healthy.'
+            cat /tmp/tarazpad.log
+            exit 1
+          fi
+          node -e "const j=require('/tmp/health.json'); if(j.ok!==true) process.exit(1)"
+
+      - name: Enterprise 1.8 master-data and commercial E2E
+        run: node scripts/e2e_phase18.mjs
+
+      - name: Detailed bank and authoritative print E2E
         shell: bash
         run: |
           set -euo pipefail
           B=http://127.0.0.1:8080
-          TOKEN=$(curl -fsS -X POST "$B/api/auth/login" -H 'Content-Type: application/json' -d '{"email":"admin@tarazpad.test","password":"Phase18_Strong_Test_2026!"}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).token")
-          H=(-H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json')
+          TOKEN=$(curl -fsS -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"Phase18_Strong_Test_2026!"}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).token")
+          AUTH="Authorization: Bearer $TOKEN"
 
-          PARTY=$(curl -fsS -X POST "$B/api/parties" "${H[@]}" -d '{"name":"مشتری نمونه جزئیات","partyType":"LEGAL","nationalId":"14000000118","mobile":"09121111118","roles":["CUSTOMER"]}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
-          PG=$(curl -fsS -X POST "$B/api/iran/master/party-groups" "${H[@]}" -d '{"code":"VIP18","title":"مشتریان ویژه","sortOrder":1}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
-          curl -fsS -X PUT "$B/api/iran/master/parties/$PARTY/details" "${H[@]}" -d "{\"groupIds\":[$PG],\"contacts\":[{\"type\":\"MOBILE\",\"title\":\"موبایل\",\"value\":\"09121111118\",\"isPrimary\":true},{\"type\":\"PHONE\",\"title\":\"دفتر\",\"value\":\"02111111118\"}],\"addresses\":[{\"type\":\"SHIPPING\",\"title\":\"انبار مشتری\",\"province\":\"تهران\",\"city\":\"تهران\",\"postalCode\":\"1111111111\",\"address\":\"تهران، نشانی تست\",\"isPrimary\":true}],\"banks\":[{\"bankName\":\"بانک ملت\",\"branchName\":\"مرکزی\",\"accountType\":\"جاری\",\"accountNo\":\"123456\",\"cardNo\":\"6104330000000018\",\"iban\":\"IR180120000000001234567890\",\"accountHolder\":\"مشتری نمونه جزئیات\",\"isPrimary\":true}]}" >/tmp/party-put.json
-          curl -fsS "$B/api/iran/master/parties/$PARTY/profile" "${H[@]}" >/tmp/party.json
-
-          PROD=$(curl -fsS -X POST "$B/api/iran/products" "${H[@]}" -d '{"sku":"P18-FOOD","name":"گوشت منجمد تست","brand":"ERDMEAT","category":"گوشت منجمد","unit":"کیلوگرم","salePrice":8900000,"purchasePrice":8400000,"vatStatus":"STANDARD","defaultVatRate":10,"productType":"GOODS","trackBatch":true,"trackExpiry":true}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
-          GRP=$(curl -fsS -X POST "$B/api/iran/master/product-groups" "${H[@]}" -d '{"code":"FROZEN18","title":"محصولات منجمد","sortOrder":1}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
-          curl -fsS -X PUT "$B/api/iran/master/products/$PROD/classification" "${H[@]}" -d "{\"groupIds\":[$GRP],\"primaryGroupId\":$GRP,\"imageUrl\":\"https://example.invalid/frozen-meat.jpg\",\"caption\":\"تصویر محصول\"}" >/tmp/product-class.json
-          curl -fsS "$B/api/iran/master/products/$PROD/profile" "${H[@]}" >/tmp/product.json
-
-          PL=$(curl -fsS -X POST "$B/api/iran/commercial/price-lists" "${H[@]}" -d "{\"title\":\"لیست قیمت تصویری تست\",\"validFrom\":\"2026-08-01\",\"validTo\":\"2026-08-31\",\"items\":[{\"productId\":$PROD,\"unitPrice\":8950000}]}" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
-          curl -fsS "$B/api/iran/commercial/price-lists/$PL" "${H[@]}" >/tmp/pl.json
-
-          INV=$(curl -fsS -X POST "$B/api/iran/sales-invoices" "${H[@]}" -d "{\"customerPartyId\":$PARTY,\"invoiceClassification\":\"NON_OFFICIAL\",\"settlementType\":\"CASH\",\"invoiceDate\":\"2026-08-20\",\"lines\":[{\"productId\":$PROD,\"qty\":2,\"unitPrice\":8900000}]}" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
-          curl -fsS "$B/api/iran/sales-invoices/$INV/print-model" "${H[@]}" >/tmp/invoice.json
-          curl -fsS "$B/api/iran/print/sales-invoices/$INV" "${H[@]}" >/tmp/invoice-final.json
-
-          BANK=$(curl -fsS -X POST "$B/api/iran/treasury/bank-accounts" "${H[@]}" -d '{"code":"BANK18","bankName":"بانک ملت","accountTitle":"حساب جاری اصلی","branchName":"مرکزی","branchCode":"001","accountType":"جاری","accountHolder":"شرکت تست","accountNo":"123456789","iban":"IR180120000000001234567890","cardNo":"6104330000000018","currency":"IRR","showOnSalesInvoice":true,"showOnReceipt":true,"isDefault":true,"isActive":true}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
+          BANK=$(curl -fsS -X POST "$B/api/iran/treasury/bank-accounts" -H "$AUTH" -H 'content-type: application/json' -d '{"code":"BANK18","bankName":"بانک ملت","accountTitle":"حساب جاری اصلی","branchName":"مرکزی","branchCode":"001","accountType":"جاری","accountHolder":"شرکت تست","accountNo":"123456789","iban":"IR180120000000001234567890","cardNo":"6104330000000018","currency":"IRR","showOnSalesInvoice":true,"showOnReceipt":true,"isDefault":true,"isActive":true}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
           test "$BANK" -gt 0
-          curl -fsS "$B/api/iran/treasury/bank-accounts?q=ملت" "${H[@]}" >/tmp/banks.json
-
-          WB=$(curl -fsS -X POST "$B/api/iran/logistics/waybills" "${H[@]}" -d "{\"salesInvoiceId\":$INV,\"receiverPartyId\":$PARTY,\"origin\":\"انبار مرکزی\",\"destination\":\"تهران، نشانی تست\",\"packageCount\":2,\"grossWeight\":22.5,\"netWeight\":20,\"freightAmount\":500000,\"insuranceAmount\":100000,\"status\":\"ISSUED\"}" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")
-          curl -fsS "$B/api/iran/logistics/waybills/$WB/print-model" "${H[@]}" >/tmp/wb.json
-          curl -fsS "$B/api/iran/print/waybills/$WB" "${H[@]}" >/tmp/wb-final.json
-          curl -fsS "$B/api/iran/print/price-lists/$PL" "${H[@]}" >/tmp/pl-final.json
-          curl -fsS "$B/api/iran/commercial/product-profitability?from=2026-08-01&to=2026-08-31" "${H[@]}" >/tmp/profit.json
-          curl -fsS "$B/api/iran/commercial/product-profitability/$PROD/details?from=2026-08-01&to=2026-08-31" "${H[@]}" >/tmp/detail.json
-
-          curl -fsS -X POST "$B/api/iran/system/print-profiles" "${H[@]}" -d '{"documentType":"SALES_INVOICE","code":"A4-FA-18","title":"فاکتور فروش A4 فارسی","paperSize":"A4","orientation":"PORTRAIT","isDefault":true,"template":{"logo":true,"bank":true,"tax":true,"signatures":true}}' >/tmp/pp.json
-          curl -fsS "$B/api/iran/system/print-profiles" "${H[@]}" >/tmp/profiles.json
-
+          curl -fsS "$B/api/iran/treasury/bank-accounts?q=ملت" -H "$AUTH" >/tmp/banks.json
           node - <<'NODE'
-          const fs=require('fs'),j=p=>JSON.parse(fs.readFileSync(p,'utf8'));
-          const pa=j('/tmp/party.json');
-          if(pa.contacts.length!==2||pa.addresses.length!==1||pa.banks.length!==1||pa.groups.length!==1) throw new Error('party profile details incomplete');
-          const pr=j('/tmp/product.json');
-          if(!pr.product.image_url||pr.groups.length!==1) throw new Error('product media/group details incomplete');
-          const pl=j('/tmp/pl.json');
-          if(pl.items.length!==1||!pl.items[0].image_url) throw new Error('visual price list incomplete');
-          const iv=j('/tmp/invoice.json');
-          if(iv.lines.length!==1||iv.header.customer_name!=='مشتری نمونه جزئیات') throw new Error('invoice print model incomplete');
-          const ivf=j('/tmp/invoice-final.json');
-          if(ivf.lines.length!==1||ivf.security.cvvStored!==false) throw new Error('authoritative invoice print model invalid');
-          const banks=j('/tmp/banks.json');
-          if(!banks.some(x=>x.code==='BANK18'&&x.show_on_sales_invoice===1)) throw new Error('detailed company bank master invalid');
-          const wb=j('/tmp/wb.json');
-          if(!wb.waybill||wb.lines.length!==1) throw new Error('waybill print model incomplete');
-          const wbf=j('/tmp/wb-final.json');
-          if(!wbf.waybill||wbf.lines.length!==1) throw new Error('authoritative waybill print model invalid');
-          const plf=j('/tmp/pl-final.json');
-          if(plf.items.length!==1||!plf.items[0].image_url) throw new Error('authoritative price-list print model invalid');
-          const pf=j('/tmp/profit.json'),dt=j('/tmp/detail.json');
-          if(!Array.isArray(pf.rows)||!Array.isArray(dt.sales)) throw new Error('profitability report/drilldown invalid');
-          const pp=j('/tmp/profiles.json');
-          if(!pp.some(x=>x.code==='A4-FA-18')) throw new Error('print profile missing');
-          console.log('PHASE 1.8 DETAIL GATE PASS');
+          const b=require('/tmp/banks.json');
+          const x=b.find(v=>v.code==='BANK18');
+          if(!x) throw new Error('bank master missing');
+          if(Number(x.show_on_sales_invoice)!==1 || Number(x.show_on_receipt)!==1) throw new Error('bank print flags missing');
+          if(Object.prototype.hasOwnProperty.call(x,'cvv2')) throw new Error('CVV2 must not be persisted or returned');
           NODE
-      - name: Web detail smoke
+
+          INV=$(curl -fsS "$B/api/iran/sales-invoices?page=1&pageSize=10" -H "$AUTH" | node -pe "const j=JSON.parse(require('fs').readFileSync(0,'utf8')); (j.rows||[])[0]?.id||''")
+          test -n "$INV"
+          curl -fsS "$B/api/iran/print/sales-invoices/$INV" -H "$AUTH" >/tmp/invoice-print.json
+          node - <<'NODE'
+          const j=require('/tmp/invoice-print.json');
+          if(!Array.isArray(j.lines)||!j.lines.length) throw new Error('invoice print lines missing');
+          if(!j.security||j.security.cvvStored!==false) throw new Error('print security contract invalid');
+          NODE
+
+      - name: Web and printing UI smoke
         run: |
+          set -euo pipefail
           grep -q "load('/phase18-ui.js')" apps/web/fa-overlay.js
           grep -q "load('/phase18-final-ui.js')" apps/web/fa-overlay.js
           grep -q 'خرید، فروش و سود کالا' apps/web/phase18-ui.js
@@ -141,6 +118,8 @@ jobs:
           grep -q 'بارنامه و حمل' apps/web/phase18-ui.js
           grep -q 'مرکز چاپ اسناد' apps/web/phase18-final-ui.js
           grep -q 'حساب‌های بانکی' apps/web/phase18-final-ui.js
+
       - name: Diagnostics
         if: always()
-        run: tail -n 300 /tmp/tarazpad.log || true
+        run: |
+          tail -n 400 /tmp/tarazpad.log || true
