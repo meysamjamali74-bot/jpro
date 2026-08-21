@@ -101,7 +101,10 @@ jobs:
 
           INV=$(curl -fsS "$B/api/iran/sales-invoices?page=1&pageSize=10" -H "$AUTH" | node -pe "const j=JSON.parse(require('fs').readFileSync(0,'utf8')); (j.rows||[])[0]?.id||''")
           test -n "$INV"
-          curl -fsS "$B/api/iran/print/sales-invoices/$INV" -H "$AUTH" >/tmp/invoice-print.json
+          PRINT_STATUS=$(curl -sS -o /tmp/invoice-print.json -w '%{http_code}' "$B/api/iran/print/sales-invoices/$INV" -H "$AUTH")
+          echo "authoritative print HTTP=$PRINT_STATUS"
+          cat /tmp/invoice-print.json
+          test "$PRINT_STATUS" = "200"
           node - <<'NODE'
           const j=require('/tmp/invoice-print.json');
           if(!Array.isArray(j.lines)||!j.lines.length) throw new Error('invoice print lines missing');
@@ -122,4 +125,5 @@ jobs:
       - name: Diagnostics
         if: always()
         run: |
+          test -f /tmp/invoice-print.json && cat /tmp/invoice-print.json || true
           tail -n 400 /tmp/tarazpad.log || true
