@@ -9,6 +9,7 @@ namespace Tarazpad.Desktop.Views;
 public partial class RecordEditorWindow : Window
 {
     private sealed record LookupOption(string Value, string Text);
+    private sealed record SelectOption(string Value, string Text);
 
     private readonly ModuleDefinition _module;
     private readonly Dictionary<FieldDefinition, Control> _controls = new();
@@ -57,8 +58,15 @@ public partial class RecordEditorWindow : Window
 
     private static ComboBox BuildSelect(FieldDefinition field)
     {
-        var combo = new ComboBox { Height = 38, Padding = new Thickness(7), ItemsSource = field.Options };
-        combo.SelectedItem = field.DefaultValue ?? field.Options?.FirstOrDefault();
+        var options = (field.Options ?? Array.Empty<string>()).Select(x => new SelectOption(x, UiText.Display(x))).ToList();
+        var combo = new ComboBox
+        {
+            Height = 38,
+            Padding = new Thickness(7),
+            ItemsSource = options,
+            DisplayMemberPath = nameof(SelectOption.Text)
+        };
+        combo.SelectedItem = options.FirstOrDefault(x => string.Equals(x.Value, field.DefaultValue, StringComparison.OrdinalIgnoreCase)) ?? options.FirstOrDefault();
         return combo;
     }
 
@@ -105,6 +113,17 @@ public partial class RecordEditorWindow : Window
                 {
                     if (row.ValueKind != JsonValueKind.Object || !row.TryGetProperty(field.LookupValueKey, out var value)) continue;
                     var display = row.TryGetProperty(field.LookupDisplayKey, out var d) ? JsonText(d) : JsonText(value);
+                    if (field.Key == "bankAccountId")
+                    {
+                        var bank = row.TryGetProperty("bank_name", out var bn) ? JsonText(bn) : string.Empty;
+                        var account = row.TryGetProperty("account_title", out var at) ? JsonText(at) : display;
+                        display = string.IsNullOrWhiteSpace(bank) ? account : $"{bank} - {account}";
+                    }
+                    else if (field.Key.EndsWith("partyId", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var code = row.TryGetProperty("code", out var c) ? JsonText(c) : string.Empty;
+                        if (!string.IsNullOrWhiteSpace(code)) display = $"{display} - {code}";
+                    }
                     options.Add(new LookupOption(JsonText(value), display));
                 }
                 combo.ItemsSource = options;
@@ -146,6 +165,7 @@ public partial class RecordEditorWindow : Window
                     raw = pair.Value switch
                     {
                         TextBox tb => tb.Text.Trim(),
+                        ComboBox { SelectedItem: SelectOption option } => option.Value,
                         ComboBox cb => cb.SelectedItem?.ToString()?.Trim() ?? string.Empty,
                         _ => string.Empty
                     };
@@ -176,7 +196,7 @@ public partial class RecordEditorWindow : Window
                 payload[field.Key] = typedValue;
             }
 
-            if (_module.Key == "parties") payload["roles"] = new[] { "CUSTOMER" };
+            NormalizeBusinessPayload(payload);
             if (string.IsNullOrWhiteSpace(_module.CreateEndpoint)) throw new InvalidOperationException("ثبت برای این ماژول فعال نیست.");
 
             await App.Api.SendJsonAsync(HttpMethod.Post, _module.CreateEndpoint!, payload);
@@ -190,6 +210,31 @@ public partial class RecordEditorWindow : Window
         finally
         {
             SaveButton.IsEnabled = true;
+        }
+    }
+
+    private void NormalizeBusinessPayload(Dictionary<string, object?> payload)
+    {
+        if (_module.Key == "parties")
+        {
+            var role = payload.TryGetValue("role", out var r) ? Convert.ToString(r) : "CUSTOMER";
+            payload.Remove("role");
+            payload["roles"] = new[] { string.IsNullOrWhiteSpace(role) ? "CUSTOMER" : role! };
+        }
+
+        if (_module.Key is "treasury-receipts" or "treasury-payments")
+        {
+            var method = Convert.ToString(payload.GetValueOrDefault("method"))?.ToUpperInvariant() ?? string.Empty;
+            if (method is "BANK" or "TRANSFER" && payload.GetValueOrDefault("bankAccountId") is null)
+                throw new InvalidOperationException("برای دریافت/پرداخت بانکی، انتخاب حساب بانکی الزامی است.");
+            if (method == "CHEQUE")
+            {
+                if (string.IsNullOrWhiteSpace(Convert.ToString(payload.GetValueOrDefault("chequeNo"))))
+                    throw new InvalidOperationException("برای عملیات چکی، شماره چک الزامی است.");
+                if (payload.GetValueOrDefault("dueDate") is null)
+                    throw new InvalidOperationException("برای عملیات چکی، تاریخ سررسید الزامی است.");
+            }
+            payload["idempotencyKey"] = Guid.NewGuid().ToString("N");
         }
     }
 
