@@ -4,7 +4,7 @@ SetCompressor zlib
 !include "LogicLib.nsh"
 
 !define APPNAME "Tarazpad ERP Web Server"
-!define VERSION "0.2.0"
+!define VERSION "0.2.1"
 
 Name "${APPNAME}"
 Caption "${APPNAME} ${VERSION}"
@@ -13,12 +13,12 @@ InstallDir "$WINDIR\..\ProgramData\Tarazpad\server"
 ShowInstDetails show
 ShowUninstDetails show
 
-VIProductVersion "0.2.0.0"
+VIProductVersion "0.2.1.0"
 VIAddVersionKey "ProductName" "Tarazpad ERP Web Server"
 VIAddVersionKey "FileDescription" "Tarazpad ERP native Windows web server installer"
 VIAddVersionKey "CompanyName" "Tarazpad"
-VIAddVersionKey "FileVersion" "0.2.0"
-VIAddVersionKey "ProductVersion" "0.2.0"
+VIAddVersionKey "FileVersion" "0.2.1"
+VIAddVersionKey "ProductVersion" "0.2.1"
 
 Function .onInit
   ReadEnvStr $0 "ProgramData"
