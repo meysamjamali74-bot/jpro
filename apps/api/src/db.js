@@ -14,7 +14,7 @@ async function installOptionalHardCloseGuards(conn){
     for(const statement of parseSqlScript(sql))await conn.query(statement);
   }catch(error){
     const code=String(error?.code||'');
-    const optionalPrivilegeFailure=new Set(['ER_SPECIFIC_ACCESS_DENIED_ERROR','ER_TABLEACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_ACCESS_DENIED_ERROR']);
+    const optionalPrivilegeFailure=new Set(['ER_SPECIFIC_ACCESS_DENIED_ERROR','ER_TABLEACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_ACCESS_DENIED_ERROR','ER_BINLOG_CREATE_ROUTINE_NEED_SUPER']);
     if(error?.code==='ENOENT'||optionalPrivilegeFailure.has(code)){
       console.warn('Optional database hard-close guards were not installed; application HARD_CLOSED guard remains active.',code||error.code);
       return;
