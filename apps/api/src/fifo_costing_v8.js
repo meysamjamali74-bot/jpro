@@ -9,9 +9,11 @@ function fifoError(message,details=null){
 }
 
 export async function ensureFifoLayers(conn,companyId,warehouseId,productId){
-  // New receipts are materialized lazily as FIFO layers inside the same transaction
-  // that needs them. Existing/upgraded databases are safe because goods_receipt_line_id
-  // is unique and INSERT IGNORE never resets an already-consumed layer.
+  // FIFO layers are created lazily inside the same transaction that consumes them.
+  // Only operationally accepted receipts are eligible; draft/cancelled/rejected
+  // receipts must never become an inventory cost source.
+  // Existing/upgraded databases are safe because goods_receipt_line_id is unique
+  // and INSERT IGNORE never resets an already-consumed layer.
   await conn.execute(`
     INSERT IGNORE INTO inventory_cost_layers(
       company_id,warehouse_id,product_id,goods_receipt_line_id,layer_date,
@@ -23,6 +25,7 @@ export async function ensureFifoLayers(conn,companyId,warehouseId,productId){
       FROM goods_receipt_lines l
       JOIN goods_receipts gr ON gr.id=l.goods_receipt_id
      WHERE gr.company_id=? AND gr.warehouse_id=? AND l.product_id=?
+       AND gr.status IN ('RECEIVED','QC','PUTAWAY','CLOSED')
        AND l.accepted_qty>?
      ORDER BY gr.receipt_date,l.id
   `,[EPS,companyId,warehouseId,productId,EPS]);
@@ -47,6 +50,9 @@ export async function consumeFifo(conn,{companyId,warehouseId,productId,quantity
     const existingCost=existing.reduce((s,x)=>s+n(x.cost_amount),0);
     if(existingQty+EPS<required){
       fifoError('مصرف FIFO ثبت‌شده برای این حرکت ناقص است.',{movementId,required,costed:existingQty});
+    }
+    if(existingQty>required+EPS){
+      fifoError('مصرف FIFO ثبت‌شده برای این حرکت بیش از مقدار خروج است.',{movementId,required,costed:existingQty});
     }
     return{
       quantity:existingQty,
