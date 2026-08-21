@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, enterprise-phase-1-8-release]
     paths:
       - 'apps/web/**'
       - 'apps/api/**'
@@ -45,6 +45,7 @@ jobs:
           test -s apps/web/assets/tarazpad-brand.webp
           grep -q 'ترازپاد' apps/web/index.html
           grep -q 'dashboard' apps/web/app.js
+          grep -q "load('/phase18-final-ui.js')" apps/web/fa-overlay.js
       - name: Start API with MySQL
         env:
           PORT: 8080
@@ -112,13 +113,14 @@ jobs:
           cp -R database release/Tarazpad-ERP-Web/
           cp Dockerfile docker-compose.yml package.json README.md .env.example release/Tarazpad-ERP-Web/
           cat > release/Tarazpad-ERP-Web/WEB-RELEASE.txt <<'EOF'
-          Tarazpad ERP Web Release
-          ------------------------
+          Tarazpad ERP Enterprise 1.8 Web Release Candidate
+          ------------------------------------------------
           Database: MySQL 8.4 / InnoDB
           Runtime: Node.js 22+
+          Includes finance, treasury, procurement, WMS, logistics, HR/payroll, CRM/BPM, BI, Iranian tax controls and Enterprise 1.8 detailed master-data/printing layer.
           Quick start: copy .env.example to .env, replace every secret, then run: docker compose up -d --build
           URL: http://localhost:8080
-          This release is the tested web build of the currently implemented Tarazpad foundation; it is not the full Enterprise 1.0 scope.
+          Final production designation requires all Enterprise release gates and the native Windows installer gate to pass on the same release branch.
           EOF
           cd release
           zip -qr Tarazpad-ERP-Web-Release.zip Tarazpad-ERP-Web
