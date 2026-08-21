@@ -64,10 +64,11 @@ jobs:
           IR_CUSTOMER=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/parties -H "$AUTH" -H 'content-type: application/json' -d '{"name":"شرکت خریدار رسمی","partyType":"LEGAL","code":"C-100","nationalId":"14009999999","economicCode":"411199999999","registrationNo":"556677","postalCode":"1499999999","province":"تهران","city":"تهران","address":"تهران","mobile":"09120000000","creditLimit":5000000,"paymentTermsDays":30,"roles":["CUSTOMER"]}' | jq -r .id)
           IR_PRODUCT=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/products -H "$AUTH" -H 'content-type: application/json' -d '{"sku":"IR-001","name":"کالای مشمول رسمی","productType":"GOODS","unit":"عدد","goodsServiceId":"1234567890123","unitCode":"1627","vatStatus":"STANDARD","defaultVatRate":10,"purchasePrice":70000,"salePrice":100000}' | jq -r .id)
 
-          # Enterprise v5 requires the production inventory/revenue policy for physical-goods posting.
-          # Configure that policy explicitly instead of bypassing the WMS compliance gate.
+          # This CI scenario injects an inventory balance with average_cost and therefore
+          # deliberately tests MOVING_AVERAGE. FIFO is covered independently by Phase 1.5
+          # using accepted goods receipts and real inventory cost layers.
           curl -fsS -X PUT http://127.0.0.1:8080/api/iran/accounting-policy -H "$AUTH" -H 'content-type: application/json' \
-            -d '{"inventoryIssuePolicy":"AUTO_ON_INVOICE","revenueRecognition":"INVOICE","allowNegativeInventory":false}' | jq -e '.ok == true'
+            -d '{"inventoryValuation":"MOVING_AVERAGE","inventoryIssuePolicy":"AUTO_ON_INVOICE","revenueRecognition":"INVOICE","allowNegativeInventory":false}' | jq -e '.ok == true'
 
           IR_WAREHOUSE=$(IR_PRODUCT="$IR_PRODUCT" node - <<'NODE'
           const mysql=require('./apps/api/node_modules/mysql2/promise');
