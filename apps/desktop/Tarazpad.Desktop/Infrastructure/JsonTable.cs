@@ -31,19 +31,23 @@ public static class JsonTable
             foreach (var prop in item.EnumerateObject())
             {
                 if (!table.Columns.Contains(prop.Name)) continue;
-                row[prop.Name] = Text(prop.Value);
+                row[prop.Name] = UiText.Display(prop.Name, prop.Value);
             }
             table.Rows.Add(row);
         }
         return table;
     }
 
-    public static string Text(JsonElement value) => value.ValueKind switch
+    public static string Text(JsonElement value)
     {
-        JsonValueKind.Null => string.Empty,
-        JsonValueKind.True => "بله",
-        JsonValueKind.False => "خیر",
-        JsonValueKind.String => value.GetString() ?? string.Empty,
-        _ => value.GetRawText()
-    };
+        var raw = value.ValueKind switch
+        {
+            JsonValueKind.Null => string.Empty,
+            JsonValueKind.True => "بله",
+            JsonValueKind.False => "خیر",
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            _ => value.GetRawText()
+        };
+        return UiText.Display(raw);
+    }
 }
