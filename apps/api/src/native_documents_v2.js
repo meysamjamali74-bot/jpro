@@ -12,7 +12,7 @@ const wrap = fn => async (req, res) => {
   }
 };
 
-function buildFilters(req, alias, partyAlias, partyColumn) {
+function buildFilters(req, alias, partyAlias, extraSearchColumn) {
   const where = [`${alias}.company_id=?`, `${alias}.is_void=0`];
   const params = [req.user.companyId];
   const q = text(req.query.q);
@@ -22,7 +22,7 @@ function buildFilters(req, alias, partyAlias, partyColumn) {
   const dateTo = text(req.query.dateTo);
   if (q) {
     const like = `%${q}%`;
-    where.push(`(${alias}.invoice_no LIKE ? OR ${partyAlias}.name LIKE ? OR ${alias}.${partyColumn} LIKE ?)`);
+    where.push(`(${alias}.invoice_no LIKE ? OR ${partyAlias}.name LIKE ? OR ${alias}.${extraSearchColumn} LIKE ?)`);
     params.push(like, like, like);
   }
   if (status) { where.push(`${alias}.status=?`); params.push(status); }
@@ -37,7 +37,7 @@ export function registerNativeDocumentRoutes(app) {
     'SALES_PERSON', 'SALES_MANAGER', 'WAREHOUSE_MANAGER', 'ACCOUNTANT', 'FINANCE_MANAGER'
   ), wrap(async (req, res) => {
     const c = req.user.companyId;
-    const [customers, suppliers, products, warehouses, vatRates] = await Promise.all([
+    const [customers, suppliers, products, warehouses, vatRates, purchaseOrders, goodsReceipts] = await Promise.all([
       pool.execute(`SELECT p.id,p.code,p.name,p.national_id,p.economic_code,p.postal_code,
           COALESCE(cp.credit_limit,0) credit_limit,COALESCE(cp.payment_terms_days,0) payment_terms_days
         FROM parties p JOIN party_roles pr ON pr.party_id=p.id AND pr.role_code='CUSTOMER'
@@ -60,9 +60,24 @@ export function registerNativeDocumentRoutes(app) {
         WHERE company_id=? AND is_active=1 ORDER BY name`, [c]),
       pool.execute(`SELECT tax_code,rate,effective_from,effective_to FROM tax_rates
         WHERE tax_kind='VAT' AND is_active=1 AND (company_id=? OR company_id IS NULL)
-        ORDER BY (company_id IS NOT NULL) DESC,effective_from DESC`, [c])
+        ORDER BY (company_id IS NOT NULL) DESC,effective_from DESC`, [c]),
+      pool.execute(`SELECT po.id,po.po_no,po.po_date,po.supplier_party_id,po.warehouse_id,po.status,
+          po.net_total,p.name supplier,w.name warehouse
+        FROM purchase_orders po JOIN parties p ON p.id=po.supplier_party_id
+        LEFT JOIN warehouses w ON w.id=po.warehouse_id
+        WHERE po.company_id=? AND po.status NOT IN ('CANCELLED','CLOSED')
+        ORDER BY po.po_date DESC,po.id DESC LIMIT 500`, [c]),
+      pool.execute(`SELECT gr.id,gr.receipt_no,gr.receipt_date,gr.purchase_order_id,gr.supplier_party_id,
+          gr.warehouse_id,gr.status,gr.qc_status,p.name supplier,w.name warehouse
+        FROM goods_receipts gr LEFT JOIN parties p ON p.id=gr.supplier_party_id
+        JOIN warehouses w ON w.id=gr.warehouse_id
+        WHERE gr.company_id=? AND gr.status NOT IN ('DRAFT','VOID')
+        ORDER BY gr.receipt_date DESC,gr.id DESC LIMIT 500`, [c])
     ]);
-    res.json({ customers: customers[0], suppliers: suppliers[0], products: products[0], warehouses: warehouses[0], vatRates: vatRates[0] });
+    res.json({
+      customers: customers[0], suppliers: suppliers[0], products: products[0], warehouses: warehouses[0],
+      vatRates: vatRates[0], purchaseOrders: purchaseOrders[0], goodsReceipts: goodsReceipts[0]
+    });
   }));
 
   app.get('/api/native/sales-invoices', requireRole('SALES_PERSON','SALES_MANAGER','ACCOUNTANT','FINANCE_MANAGER','WAREHOUSE_MANAGER'), wrap(async (req, res) => {
