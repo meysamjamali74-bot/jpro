@@ -84,9 +84,11 @@ Section "Internal Server + MySQL (recommended for main PC/server)" SEC_SERVER
   SetCompress auto
   SetOutPath "$ServerRoot"
 
-  ; Prevent the legacy server script from launching a browser. It still configures
-  ; the proven MySQL/API service, while the user-facing entry point is WPF.
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$env:GITHUB_ACTIONS=''true''; & ''$ServerRoot\Install-TarazpadServer.ps1''"' $1
+  ; The server bootstrap still contains a compatibility browser launch for the old
+  ; 1.x installer. Set the inherited CI flag in this NSIS process so the child
+  ; PowerShell process suppresses that launch. The desktop EXE remains the only UI.
+  System::Call 'Kernel32::SetEnvironmentVariableW(w "GITHUB_ACTIONS", w "true") i .r0'
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$ServerRoot\Install-TarazpadServer.ps1"' $1
   ${If} $1 != 0
     MessageBox MB_ICONSTOP|MB_OK "Tarazpad internal server setup failed with error code $1.$\r$\nSee C:\ProgramData\Tarazpad\server\logs."
     SetErrorLevel $1
@@ -101,7 +103,7 @@ Section "Internal Server + MySQL (recommended for main PC/server)" SEC_SERVER
     Quit
   ${EndIf}
 
-  ; The legacy server setup creates a browser shortcut. Replace it again after server setup.
+  ; Ensure any legacy shortcut is replaced with the native WPF application.
   ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$ServerRoot\Configure-TarazpadNative.ps1" -DesktopExe "$INSTDIR\Tarazpad.Desktop.exe"' $3
   ${If} $3 != 0
     SetErrorLevel $3
