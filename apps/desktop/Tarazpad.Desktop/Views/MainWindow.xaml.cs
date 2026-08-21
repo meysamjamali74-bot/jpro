@@ -30,8 +30,8 @@ public partial class MainWindow : Window
                 case "cashflow": ShowReportCenter("CASH_FLOW"); break;
                 case "assets": ShowTabs("دارایی ثابت", "طبقات اموال، دارایی‌ها و استهلاک", "assets", "asset-classes", "depreciation-runs"); break;
                 case "tax": ShowTaxCenter(); break;
-                case "sales": ShowSingle("sales"); break;
-                case "purchases": ShowTabs("خرید و تأمین", "فاکتور خرید، دریافت کالا و کنترل تطبیق", "purchase-invoices", "goods-receipts"); break;
+                case "sales": ShowSales(); break;
+                case "purchases": ShowPurchases(); break;
                 case "inventory": ShowSingle("inventory"); break;
                 case "logistics": ShowSingle("logistics"); break;
                 case "parties": ShowSingle("parties"); break;
@@ -52,6 +52,20 @@ public partial class MainWindow : Window
         PageTitle.Text = "داشبورد مدیریتی";
         PageSubtitle.Text = "نمای یکپارچه وضعیت مالی و عملیاتی";
         SetContent(new DashboardView());
+    }
+
+    private void ShowSales()
+    {
+        PageTitle.Text = "فروش و صورتحساب";
+        PageSubtitle.Text = "فاکتور چندردیفه، مالیات، انبار، وصول و ثبت قطعی";
+        SetContent(new SalesWorkspaceView());
+    }
+
+    private void ShowPurchases()
+    {
+        PageTitle.Text = "خرید و تأمین";
+        PageSubtitle.Text = "فاکتور خرید، تطبیق سفارش و رسید انبار و ثبت حسابداری";
+        SetContent(new PurchaseWorkspaceView());
     }
 
     private void ShowSingle(string key)
@@ -108,6 +122,8 @@ public partial class MainWindow : Window
             switch (_current)
             {
                 case DashboardView d: await d.RefreshAsync(); break;
+                case SalesWorkspaceView s: await s.RefreshAsync(); break;
+                case PurchaseWorkspaceView p: await p.RefreshAsync(); break;
                 case DataModuleView d: await d.RefreshAsync(); break;
                 case TabbedModuleView t: await t.RefreshAsync(); break;
                 case ReportCenterView r: await r.RefreshAsync(); break;
