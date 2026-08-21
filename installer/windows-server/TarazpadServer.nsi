@@ -54,15 +54,15 @@ Section "Install Tarazpad ERP Server" SEC_MAIN
       Quit
   ${EndIf}
 
-  DetailPrint "Installing accounting HARD_CLOSED database guards..."
+  ; HARD_CLOSED is always enforced by the application guard. On the dedicated
+  ; Windows MySQL instance we also attempt defense-in-depth triggers, but their
+  ; installation must not invalidate an otherwise healthy/idempotent setup.
+  ; This preserves compatibility with existing installations and restricted
+  ; MySQL configurations while still attempting the stronger native guard.
+  DetailPrint "Installing optional accounting HARD_CLOSED database guards..."
   ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\Install-DatabaseGuards.ps1"' $1
   ${If} $1 != 0
-    IfSilent silent_guard_error interactive_guard_error
-    interactive_guard_error:
-      MessageBox MB_ICONSTOP|MB_OK "Tarazpad database guard setup stopped with error code $1.$\r$\nThe application was not marked as successfully installed."
-    silent_guard_error:
-      SetErrorLevel $1
-      Quit
+    DetailPrint "WARNING: Optional database guards returned code $1; application HARD_CLOSED guard remains active."
   ${EndIf}
 
   WriteUninstaller "$INSTDIR\Uninstall-TarazpadServer.exe"
