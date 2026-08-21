@@ -1,7 +1,7 @@
 name: Tarazpad Enterprise 1.6 Financial Reporting Gate
 on:
   push:
-    branches: [enterprise-phase-1-6]
+    branches: [enterprise-phase-1-6, enterprise-phase-1-8-release]
   pull_request:
 
 jobs:
@@ -55,6 +55,14 @@ jobs:
           done
           if [ "$ok" != "1" ]; then cat /tmp/tarazpad-phase16.log; exit 1; fi
           jq -e '.ok == true' /tmp/p16-health.json
+      - name: Install dedicated-server hard-close database guards
+        env:
+          MYSQL_PWD: root_p16_2026
+        run: |
+          set -euo pipefail
+          docker run --rm -i --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -uroot tarazpad < installer/windows-server/HardClose-DatabaseGuards.sql
+          count=$(docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -uroot tarazpad -N -e "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='tarazpad' AND TRIGGER_NAME IN ('trg_journal_hard_close_delete','trg_journal_hard_close_update','trg_journal_line_hard_close_insert','trg_journal_line_hard_close_update','trg_journal_line_hard_close_delete');")
+          test "$count" -eq 5
       - name: Financial reporting and hard-close E2E
         env:
           TEST_BASE_URL: http://127.0.0.1:8080
