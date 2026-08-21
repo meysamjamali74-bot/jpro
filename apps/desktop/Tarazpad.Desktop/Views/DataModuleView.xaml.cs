@@ -1,7 +1,6 @@
 using System.Data;
 using System.Globalization;
 using System.Text;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -38,11 +37,11 @@ public partial class DataModuleView : UserControl
                 endpoint += (endpoint.Contains('?') ? "&" : "?") + "q=" + Uri.EscapeDataString(SearchBox.Text.Trim());
 
             var json = await App.Api.GetJsonAsync(endpoint);
-            _table = ToDataTable(ExtractRows(json));
+            _table = JsonTable.ToDataTable(JsonTable.ExtractRows(json));
             Grid.ItemsSource = _table.DefaultView;
             CountText.Text = $"{_table.Rows.Count:N0} رکورد";
             EmptyPanel.Visibility = _table.Rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            FooterText.Text = $"آخرین بروزرسانی: {DateTime.Now:yyyy/MM/dd HH:mm:ss}";
+            FooterText.Text = $"آخرین بروزرسانی: {PersianDate.Today()} - {DateTime.Now:HH:mm:ss}";
         }
         catch (Exception ex)
         {
@@ -74,8 +73,24 @@ public partial class DataModuleView : UserControl
 
     private void Grid_AutoGeneratingColumn(object? sender, DataGridAutoGeneratingColumnEventArgs e)
     {
-        if (Definition.ColumnTitles?.TryGetValue(e.PropertyName, out var title) == true) e.Column.Header = title;
-        e.Column.MinWidth = 90;
+        var hasFriendlyTitle = Definition.ColumnTitles?.TryGetValue(e.PropertyName, out var title) == true;
+        if (hasFriendlyTitle) e.Column.Header = title;
+
+        // Internal relational/audit IDs are useful for the API but clutter an accounting grid.
+        // Keep identifiers only when the module explicitly gives them a friendly title.
+        if (!hasFriendlyTitle && (e.PropertyName.Equals("id", StringComparison.OrdinalIgnoreCase)
+            || e.PropertyName.Equals("company_id", StringComparison.OrdinalIgnoreCase)
+            || e.PropertyName.Equals("created_by", StringComparison.OrdinalIgnoreCase)
+            || e.PropertyName.Equals("updated_by", StringComparison.OrdinalIgnoreCase)
+            || e.PropertyName.EndsWith("_party_id", StringComparison.OrdinalIgnoreCase)
+            || e.PropertyName.EndsWith("_user_id", StringComparison.OrdinalIgnoreCase)
+            || e.PropertyName.EndsWith("_entry_id", StringComparison.OrdinalIgnoreCase)))
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        e.Column.MinWidth = 95;
         e.Column.Width = new DataGridLength(1, DataGridLengthUnitType.Auto);
     }
 
@@ -100,7 +115,7 @@ public partial class DataModuleView : UserControl
         if (dialog.ShowDialog() != true) return;
 
         var sb = new StringBuilder();
-        sb.AppendLine(string.Join(",", _table.Columns.Cast<DataColumn>().Select(c => Csv(c.ColumnName))));
+        sb.AppendLine(string.Join(",", _table.Columns.Cast<DataColumn>().Select(c => Csv(Definition.ColumnTitles?.TryGetValue(c.ColumnName, out var t) == true ? t : c.ColumnName))));
         foreach (DataRow row in _table.Rows)
             sb.AppendLine(string.Join(",", _table.Columns.Cast<DataColumn>().Select(c => Csv(Convert.ToString(row[c], CultureInfo.InvariantCulture) ?? string.Empty))));
         File.WriteAllText(dialog.FileName, "\uFEFF" + sb, new UTF8Encoding(false));
@@ -113,50 +128,6 @@ public partial class DataModuleView : UserControl
         SearchButton.IsEnabled = !loading;
         AddButton.IsEnabled = !loading;
         Grid.IsEnabled = !loading;
-    }
-
-    private static IEnumerable<JsonElement> ExtractRows(JsonElement root)
-    {
-        if (root.ValueKind == JsonValueKind.Array) return root.EnumerateArray().Select(x => x.Clone()).ToArray();
-        if (root.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var key in new[] { "rows", "items", "data", "customers", "results" })
-                if (root.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Array)
-                    return value.EnumerateArray().Select(x => x.Clone()).ToArray();
-            return new[] { root.Clone() };
-        }
-        return Array.Empty<JsonElement>();
-    }
-
-    private static DataTable ToDataTable(IEnumerable<JsonElement> source)
-    {
-        var rows = source.Where(x => x.ValueKind == JsonValueKind.Object).ToList();
-        var table = new DataTable();
-        var keys = rows.SelectMany(r => r.EnumerateObject())
-            .Where(p => p.Value.ValueKind is not JsonValueKind.Object and not JsonValueKind.Array)
-            .Select(p => p.Name)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        foreach (var key in keys) table.Columns.Add(key, typeof(string));
-        foreach (var item in rows)
-        {
-            var row = table.NewRow();
-            foreach (var prop in item.EnumerateObject())
-            {
-                if (!table.Columns.Contains(prop.Name)) continue;
-                row[prop.Name] = prop.Value.ValueKind switch
-                {
-                    JsonValueKind.Null => string.Empty,
-                    JsonValueKind.True => "بله",
-                    JsonValueKind.False => "خیر",
-                    JsonValueKind.String => prop.Value.GetString() ?? string.Empty,
-                    _ => prop.Value.GetRawText()
-                };
-            }
-            table.Rows.Add(row);
-        }
-        return table;
     }
 
     private static string Csv(string text) => '"' + text.Replace("\"", "\"\"").Replace("\r", " ").Replace("\n", " ") + '"';
