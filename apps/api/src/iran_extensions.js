@@ -85,7 +85,6 @@ export function registerIranExtensionRoutes(app){
   registerWmsFulfillmentV5Routes(app);
   registerWmsIssueV5Routes(app);
   registerSalesCostPolicyV5Routes(app);
-  registerSalesV5Routes(app);
   registerPayrollCommissionV5Routes(app);
 
   registerBiV5Routes(app);
@@ -107,7 +106,11 @@ export function registerIranExtensionRoutes(app){
   registerAdminV2Routes(app);
   registerTreasuryV2Routes(app);
   registerBankImportV2Routes(app);
+  // Financial invoice posting remains authoritative before fulfillment-policy
+  // helpers so FULFILLMENT/DISTRIBUTION policies can post the invoice first and
+  // later replace provisional COGS with the actual warehouse issue adjustment.
   registerSalesCostingV2Routes(app);
+  registerSalesV5Routes(app);
   registerDistributionV2Routes(app);
   registerCommissionV2Routes(app);
   registerPayrollIranRoutes(app);
