@@ -5,6 +5,8 @@ const db=await mysql.createConnection({host:process.env.MYSQL_HOST||'127.0.0.1',
 async function api(path,{token,method='GET',body,allow=[]}={}){const r=await fetch(base+path,{method,headers:{'content-type':'application/json',...(token?{authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body)}),text=await r.text();let data;try{data=JSON.parse(text)}catch{data=text}if(!r.ok&&!allow.includes(r.status))throw new Error(`${method} ${path} -> ${r.status}: ${typeof data==='string'?data:JSON.stringify(data)}`);return{status:r.status,data}}
 async function login(email,password){return(await api('/api/auth/login',{method:'POST',body:{email,password}})).data.token}
 async function user(admin,name,email,password,roles){return(await api('/api/iran/admin/users',{token:admin,method:'POST',body:{fullName:name,email,password,roleCodes:roles}})).data}
+const pFmt=new Intl.DateTimeFormat('en-US-u-ca-persian',{year:'numeric',month:'numeric',day:'numeric',timeZone:'UTC'});
+const pparts=d=>Object.fromEntries(pFmt.formatToParts(new Date(d)).filter(x=>x.type!=='literal').map(x=>[x.type,Number(x.value)]));
 const step=x=>console.log(`\n[PHASE16] ${x}`);
 try{
  step('fresh startup and users');
@@ -18,7 +20,7 @@ try{
 
  step('create Jalali fiscal year and choose period 5');
  const fy=(await api('/api/iran/finance/fiscal-years',{token:F1,method:'POST',body:{yearNo:1405,title:'سال مالی ۱۴۰۵'}})).data;assert.equal(fy.periodCount,12);
- const years=(await api('/api/iran/finance/fiscal-years',{token:AT})).data,year=years.find(x=>Number(x.id)===Number(fy.id)),period=year.periods.find(x=>Number(x.period_no)===5);assert.ok(period);assert.equal(new Intl.DateTimeFormat('en-US-u-ca-persian',{year:'numeric',month:'numeric',day:'numeric',timeZone:'UTC'}).format(new Date(period.start_date)).includes('5/1/1405'),false); // format order is locale-dependent; exact dates are tested below through API workflow.
+ const years=(await api('/api/iran/finance/fiscal-years',{token:AT})).data,year=years.find(x=>Number(x.id)===Number(fy.id)),period=year.periods.find(x=>Number(x.period_no)===5);assert.ok(period);const ps=pparts(period.start_date);assert.deepEqual({year:ps.year,month:ps.month,day:ps.day},{year:1405,month:5,day:1});
 
  step('seed balanced posted ledger transactions inside period');
  const [[ar]]=await db.query(`SELECT id FROM accounts WHERE company_id=1 AND code='110100'`),[[inv]]=await db.query(`SELECT id FROM accounts WHERE company_id=1 AND code='130100'`),[[sales]]=await db.query(`SELECT id FROM accounts WHERE company_id=1 AND code='410100'`),[[cogs]]=await db.query(`SELECT id FROM accounts WHERE company_id=1 AND code='510100'`);assert.ok(ar&&inv&&sales&&cogs);
