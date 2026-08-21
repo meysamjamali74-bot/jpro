@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Tarazpad.Desktop.Infrastructure;
 
 namespace Tarazpad.Desktop.Views;
 
@@ -115,7 +116,7 @@ public partial class DashboardView : UserControl
                 var widget = _catalog[definition.Key];
                 widget.Value = definition.Unit == "ریال" ? Money(json, definition.Key) : Number(json, definition.Key);
             }
-            LastRefreshText.Text = $"آخرین بروزرسانی: {Infrastructure.PersianDate.Today()}  {DateTime.Now:HH:mm:ss}";
+            LastRefreshText.Text = $"آخرین بروزرسانی: {PersianDate.Today()}  {DateTime.Now:HH:mm:ss}";
             HealthText.Text = "● متصل";
             HealthText.Foreground = new SolidColorBrush(Color.FromRgb(15, 157, 104));
         }
@@ -159,11 +160,11 @@ public partial class DashboardView : UserControl
 
     private void Widget_MouseMove(object sender, MouseEventArgs e)
     {
-        if (e.LeftButton != MouseButtonState.Pressed || _dragWidget is null) return;
+        if (e.LeftButton != MouseButtonState.Pressed || _dragWidget is null || sender is not DependencyObject source) return;
         var point = e.GetPosition(this);
         if (Math.Abs(point.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(point.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-        DragDrop.DoDragDrop((DependencyObject)sender, _dragWidget, DragDropEffects.Move);
+        DragDrop.DoDragDrop(source, _dragWidget, DragDropEffects.Move);
     }
 
     private void Widget_DragEnter(object sender, DragEventArgs e)
