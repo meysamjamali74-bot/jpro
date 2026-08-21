@@ -54,8 +54,15 @@ $health2=Invoke-RestMethod 'http://127.0.0.1:8080/api/health' -TimeoutSec 10
 if(!$health2.ok){throw 'Health check failed after Setup.exe second run.'}
 
 Write-Host '[CI] Verifying HARD_CLOSED database guards installed by packaged Setup...'
-$env:MYSQL_PWD=$after.mysqlPassword
-$triggerCount=& $after.mysqlExe --protocol=tcp --host=$after.mysqlHost --port=$after.mysqlPort --user=$after.mysqlUser --database=$after.mysqlDatabase --batch --skip-column-names -e "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_journal_line_hard_close_insert','trg_journal_line_hard_close_update','trg_journal_line_hard_close_delete');"
+# Verify trigger metadata as root because the runtime account intentionally has no
+# TRIGGER privilege. Use scalar native arguments so PowerShell cannot stringify the
+# whole PSCustomObject (the original source of the opaque mysql port failure).
+$mysqlExe=[string]$after.mysqlExe
+$mysqlHost=[string]$after.mysqlHost
+$mysqlPort=[int]$after.mysqlPort
+$mysqlDatabase=[string]$after.mysqlDatabase
+$env:MYSQL_PWD=[string]$after.mysqlRootPassword
+$triggerCount=& $mysqlExe "--protocol=tcp" "--host=$mysqlHost" "--port=$mysqlPort" "--user=root" "--database=$mysqlDatabase" "--batch" "--skip-column-names" "--execute=SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND TRIGGER_NAME IN ('trg_journal_line_hard_close_insert','trg_journal_line_hard_close_update','trg_journal_line_hard_close_delete');"
 $mysqlExit=$LASTEXITCODE
 Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
 if($mysqlExit -ne 0){throw "Database guard verification query failed: $mysqlExit"}
