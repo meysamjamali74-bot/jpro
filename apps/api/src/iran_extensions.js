@@ -119,6 +119,20 @@ export function registerIranExtensionRoutes(app){
   registerFifoReceiptV8Guard(app);
   registerPurchaseIranRoutes(app);
 
+  // MySQL 8.4 prepared-statement compatibility: keep pagination integers in the
+  // SQL text after strict numeric clamping instead of binding LIMIT/OFFSET.
+  app.get('/api/iran/parties',wrap(async(req,res)=>{
+    const q=text(req.query.q),role=text(req.query.role);
+    const page=Math.max(1,n(req.query.page)||1),pageSize=Math.min(200,Math.max(10,n(req.query.pageSize)||50)),offset=(page-1)*pageSize;
+    const where=['p.company_id=?','p.is_deleted=0'],params=[req.user.companyId];
+    if(q){const like=`%${q}%`;where.push('(p.name LIKE ? OR p.code LIKE ? OR p.national_id LIKE ?)');params.push(like,like,like)}
+    if(role){where.push('EXISTS(SELECT 1 FROM party_roles pr2 WHERE pr2.party_id=p.id AND pr2.role_code=?)');params.push(role)}
+    const whereSql=where.join(' AND ');
+    const [[count]]=await pool.execute(`SELECT COUNT(*) total FROM parties p WHERE ${whereSql}`,params);
+    const [rows]=await pool.execute(`SELECT p.*,GROUP_CONCAT(pr.role_code ORDER BY pr.role_code) roles,cp.credit_limit,cp.payment_terms_days,sp.bank_iban supplier_iban,ep.personnel_no FROM parties p LEFT JOIN party_roles pr ON pr.party_id=p.id LEFT JOIN customer_profiles cp ON cp.party_id=p.id LEFT JOIN supplier_profiles sp ON sp.party_id=p.id LEFT JOIN employee_profiles ep ON ep.party_id=p.id WHERE ${whereSql} GROUP BY p.id ORDER BY p.id DESC LIMIT ${pageSize} OFFSET ${offset}`,params);
+    res.json({rows,total:n(count.total),page,pageSize});
+  }));
+
   app.get('/api/iran/products',wrap(async(req,res)=>{
     const q=text(req.query.q),vat=text(req.query.vatStatus),type=text(req.query.productType),active=text(req.query.active);
     const where=['p.company_id=?','p.is_deleted=0'],params=[req.user.companyId];
