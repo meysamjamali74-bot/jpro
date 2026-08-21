@@ -112,8 +112,12 @@ export function registerIranExtensionRoutes(app){
   registerCommissionV2Routes(app);
   registerPayrollIranRoutes(app);
   registerPayrollExtraRoutes(app);
-  registerPurchaseContextRoutes(app);
+
+  // FIFO layer creation is a pre-handler guard. It must be registered before every
+  // goods-receipt accounting route so accepted stock always has a cost layer before
+  // the receipt handler sends its response.
   registerFifoReceiptV8Guard(app);
+  registerPurchaseContextRoutes(app);
   registerPurchaseIranRoutes(app);
 
   app.get('/api/iran/products',wrap(async(req,res)=>{
