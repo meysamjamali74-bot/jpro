@@ -5,8 +5,8 @@ services:
     environment:
       MYSQL_DATABASE: tarazpad
       MYSQL_USER: tarazpad
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-Tarazpad_Db_ChangeMe_2026!}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Tarazpad_Root_ChangeMe_2026!}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env before starting Tarazpad}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env before starting Tarazpad}
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci", "--binlog-format=ROW", "--server-id=1"]
     volumes:
       - tarazpad_mysql:/var/lib/mysql
@@ -28,10 +28,10 @@ services:
       MYSQL_PORT: 3306
       MYSQL_DATABASE: tarazpad
       MYSQL_USER: tarazpad
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-Tarazpad_Db_ChangeMe_2026!}
-      JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_BEFORE_PRODUCTION_64_CHARS_MINIMUM}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env before starting Tarazpad}
+      JWT_SECRET: ${JWT_SECRET:?Set a strong JWT_SECRET of at least 48 characters in .env}
       TARAZPAD_ADMIN_EMAIL: ${TARAZPAD_ADMIN_EMAIL:-admin@tarazpad.local}
-      TARAZPAD_ADMIN_PASSWORD: ${TARAZPAD_ADMIN_PASSWORD:-ChangeMe_Immediately_2026!}
+      TARAZPAD_ADMIN_PASSWORD: ${TARAZPAD_ADMIN_PASSWORD:?Set a strong TARAZPAD_ADMIN_PASSWORD in .env}
       TARAZPAD_ADMIN_NAME: ${TARAZPAD_ADMIN_NAME:-مدیر سیستم}
     ports:
       - "8080:8080"
