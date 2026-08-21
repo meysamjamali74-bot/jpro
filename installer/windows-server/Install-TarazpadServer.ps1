@@ -32,7 +32,7 @@ function Test-FreePort([int]$port){
   $listener=$null
   try{$listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,$port);$listener.Start();return $true}catch{return $false}finally{if($listener){$listener.Stop()}}
 }
-function Find-FreePort([int]$start=3307){for($p=$start;$p -le ($start+30);$p++){if(Test-FreePort $p){return $p}};throw 'No free local MySQL port found.'}
+function Find-FreePort([int]$start=3307){for($p=$start;$p -le ($start+30);$p++){if(Test-FreePort $p){return $p}};throw 'No free local TCP port found in the allowed range.'}
 function Test-TcpConnection([string]$serverHost,[int]$port,[int]$timeoutMs=1000){
   $client=$null
   try{
@@ -144,7 +144,8 @@ FLUSH PRIVILEGES;
 
 Step 'Preparing Tarazpad ERP Web Server...';New-Item $DataRoot,$ConfigRoot,$LogRoot,$BackupRoot -ItemType Directory -Force|Out-Null
 $node=Resolve-Node;$db=Ensure-MySql
-if($db.ExistingConfig){$cfg=$db.ExistingConfig;$cfg.nodeExe=$node}else{$cfg=[ordered]@{version='0.2.0';installedAt=(Get-Date).ToString('o');nodeExe=$node;mysqlExe=$db.Mysql;mysqldExe=$db.Mysqld;mysqldumpExe=$db.Dump;mysqlBase=$db.Base;mysqlVersion=$db.Version;mysqlSource=$db.Source;mysqlHost='127.0.0.1';mysqlPort=$db.Port;mysqlDatabase='tarazpad';mysqlUser='tarazpad_app';mysqlPassword=$db.AppSecret;mysqlRootPassword=$db.RootSecret;jwtSecret=$db.JwtSecret;adminEmail='admin@tarazpad.local';adminPassword=$db.AdminSecret;adminName='مدیر سیستم';webPort=$WebPort}}
+if($db.ExistingConfig -and $db.ExistingConfig.webPort){$WebPort=[int]$db.ExistingConfig.webPort;Ok "Existing Tarazpad web port $WebPort preserved."}elseif(-not(Test-FreePort $WebPort)){$WebPort=Find-FreePort 8081;Warn "TCP port 8080 is already in use; Tarazpad will use web port $WebPort instead."}
+if($db.ExistingConfig){$cfg=$db.ExistingConfig;$cfg.nodeExe=$node}else{$cfg=[ordered]@{version='0.2.1';installedAt=(Get-Date).ToString('o');nodeExe=$node;mysqlExe=$db.Mysql;mysqldExe=$db.Mysqld;mysqldumpExe=$db.Dump;mysqlBase=$db.Base;mysqlVersion=$db.Version;mysqlSource=$db.Source;mysqlHost='127.0.0.1';mysqlPort=$db.Port;mysqlDatabase='tarazpad';mysqlUser='tarazpad_app';mysqlPassword=$db.AppSecret;mysqlRootPassword=$db.RootSecret;jwtSecret=$db.JwtSecret;adminEmail='admin@tarazpad.local';adminPassword=$db.AdminSecret;adminName='مدیر سیستم';webPort=$WebPort}}
 $cfg|ConvertTo-Json -Depth 5|Set-Content $ConfigPath -Encoding utf8;& icacls $ConfigPath /inheritance:r /grant:r 'SYSTEM:(F)' 'Administrators:(F)'|Out-Null
 
 $watch=@'
