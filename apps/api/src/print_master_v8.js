@@ -6,7 +6,11 @@ const wrap=fn=>async(req,res)=>{try{await fn(req,res)}catch(e){console.error('pr
 const read=requireRole('SUPER_ADMIN','FINANCE_MANAGER','ACCOUNTANT','SALES_MANAGER','SALES_PERSON','WAREHOUSE_MANAGER','LOGISTICS_MANAGER','PURCHASE_MANAGER');
 
 async function companyModel(companyId){
-  const [[company]]=await pool.execute(`SELECT c.*,tp.taxpayer_memory_id,tp.tax_terminal_id,tp.default_invoice_type,tp.default_invoice_pattern,tp.taxpayer_system_enabled FROM companies c LEFT JOIN company_tax_profiles tp ON tp.company_id=c.id WHERE c.id=?`,[companyId]);
+  const [[company]]=await pool.execute('SELECT * FROM companies WHERE id=?',[companyId]);
+  if(company){
+    const [taxProfiles]=await pool.execute('SELECT * FROM company_tax_profiles WHERE company_id=? LIMIT 1',[companyId]);
+    if(taxProfiles[0])Object.assign(company,taxProfiles[0]);
+  }
   const [banks]=await pool.execute(`SELECT id,code,bank_name,branch_name,branch_code,account_type,account_title,account_holder,account_no,iban,card_no,card_expiry,currency,is_default FROM bank_accounts WHERE company_id=? AND is_active=1 AND show_on_sales_invoice=1 ORDER BY is_default DESC,bank_name,code`,[companyId]);
   return{company,banks};
 }
@@ -18,10 +22,24 @@ async function defaultProfile(companyId,type){
 export function registerPrintMasterV8Routes(app){
   app.get('/api/iran/print/sales-invoices/:id',read,wrap(async(req,res)=>{
     const id=Number(req.params.id),c=req.user.companyId;
-    const [[h]]=await pool.execute(`SELECT si.*,p.code customer_code,p.name customer_name,p.party_type customer_type,p.national_id customer_national_id,p.economic_code customer_economic_code,p.registration_no customer_registration_no,p.postal_code customer_postal_code,p.province customer_province,p.city customer_city,p.address customer_address,p.mobile customer_mobile,p.phone customer_phone,u.full_name salesperson_name FROM sales_invoices si JOIN parties p ON p.id=si.customer_party_id LEFT JOIN users u ON u.id=si.salesperson_user_id WHERE si.id=? AND si.company_id=?`,[id,c]);
+    // Keep the authoritative print model compatible with both the original Iran
+    // master-data schema and the Enterprise 1.8 compatibility upgrade. The base
+    // invoice/party query mirrors the already-stable print-model route, while
+    // optional extensions are enriched without making the document unreadable.
+    const [[h]]=await pool.execute(`SELECT si.*,p.code customer_code,p.name customer_name,p.party_type customer_type,p.national_id customer_national_id,p.economic_code customer_economic_code,p.registration_no customer_registration_no,p.postal_code customer_postal_code,p.province customer_province,p.city customer_city,p.address customer_address,p.mobile customer_mobile,p.phone customer_phone FROM sales_invoices si JOIN parties p ON p.id=si.customer_party_id WHERE si.id=? AND si.company_id=?`,[id,c]);
     if(!h)fail('فاکتور فروش پیدا نشد.',404);
-    const [lines]=await pool.execute(`SELECT l.id,l.product_id,p.sku,p.barcode,p.name product_name,p.brand,p.unit,l.description,l.goods_service_id,l.unit_code,l.qty,l.unit_price,l.discount_amount,l.amount_before_discount,l.amount_after_discount,l.vat_status,l.vat_rate,l.tax_amount,l.other_duties_amount,l.other_duties_description,l.line_total FROM sales_invoice_lines l JOIN products p ON p.id=l.product_id WHERE l.invoice_id=? ORDER BY l.id`,[id]);
-    const [addresses]=await pool.execute(`SELECT address_type,title,province,city,postal_code,address_text,phone,is_primary FROM party_addresses WHERE party_id=? AND is_active=1 ORDER BY is_primary DESC,id`,[h.customer_party_id]);
+    if(h.salesperson_user_id){
+      const [users]=await pool.execute('SELECT full_name FROM users WHERE id=? LIMIT 1',[h.salesperson_user_id]);
+      h.salesperson_name=users[0]?.full_name||null;
+    }else h.salesperson_name=null;
+
+    const [lines]=await pool.execute(`SELECT l.*,p.sku,p.barcode,p.name product_name,p.brand,p.unit FROM sales_invoice_lines l JOIN products p ON p.id=l.product_id WHERE l.invoice_id=? ORDER BY l.id`,[id]);
+    const [addressRows]=await pool.execute(`SELECT * FROM party_addresses WHERE party_id=? AND is_active=1 ORDER BY is_primary DESC,id`,[h.customer_party_id]);
+    const addresses=addressRows.map(a=>({
+      ...a,
+      address_text:a.address_text??a.address??null,
+      is_primary:a.is_primary??a.is_default??0
+    }));
     const {company,banks}=await companyModel(c),profile=await defaultProfile(c,'SALES_INVOICE');
     const totals={gross:Number(h.gross_total||0),discount:Number(h.discount_total||0),tax:Number(h.tax_total||0),net:Number(h.net_total||0),outstanding:Number(h.outstanding_amount||0),paid:Math.max(0,Number(h.net_total||0)-Number(h.outstanding_amount||0))};
     res.json({documentType:'SALES_INVOICE',classification:h.invoice_classification,taxInvoiceType:h.tax_invoice_type,company,customer:{id:h.customer_party_id,code:h.customer_code,name:h.customer_name,type:h.customer_type,nationalId:h.customer_national_id,economicCode:h.customer_economic_code,registrationNo:h.customer_registration_no,postalCode:h.customer_postal_code,province:h.customer_province,city:h.customer_city,address:h.customer_address,mobile:h.customer_mobile,phone:h.customer_phone,addresses},invoice:h,lines,totals,banks,printProfile:profile,security:{cvvStored:false}});
