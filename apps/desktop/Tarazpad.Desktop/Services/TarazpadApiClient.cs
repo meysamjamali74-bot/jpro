@@ -20,12 +20,11 @@ public sealed class TarazpadApiClient
         if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             throw new ArgumentException("آدرس سرور معتبر نیست.");
         ServerUrl = normalized;
-        _http.BaseAddress = new Uri(ServerUrl + "/");
     }
 
     public async Task<bool> HealthAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await _http.GetAsync("api/health", cancellationToken);
+        using var response = await _http.GetAsync(BuildUri("api/health"), cancellationToken);
         if (!response.IsSuccessStatusCode) return false;
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
         return json.RootElement.TryGetProperty("ok", out var ok) && ok.GetBoolean();
@@ -33,7 +32,7 @@ public sealed class TarazpadApiClient
 
     public async Task LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.PostAsJsonAsync("api/auth/login", new { email, password }, cancellationToken);
+        using var response = await _http.PostAsJsonAsync(BuildUri("api/auth/login"), new { email, password }, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException(response.StatusCode == System.Net.HttpStatusCode.Unauthorized ? "نام کاربری یا رمز عبور صحیح نیست." : $"ورود ناموفق بود: {body}");
@@ -48,7 +47,7 @@ public sealed class TarazpadApiClient
 
     public async Task<JsonElement> GetJsonAsync(string relativeUrl, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.GetAsync(relativeUrl.TrimStart('/'), cancellationToken);
+        using var response = await _http.GetAsync(BuildUri(relativeUrl), cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException(ToFriendlyError(response.StatusCode, body));
         using var doc = JsonDocument.Parse(body);
@@ -57,7 +56,7 @@ public sealed class TarazpadApiClient
 
     public async Task<JsonElement> SendJsonAsync(HttpMethod method, string relativeUrl, object payload, CancellationToken cancellationToken = default)
     {
-        var request = new HttpRequestMessage(method, relativeUrl.TrimStart('/'))
+        var request = new HttpRequestMessage(method, BuildUri(relativeUrl))
         {
             Content = new StringContent(JsonSerializer.Serialize(payload, _json), Encoding.UTF8, "application/json")
         };
@@ -68,6 +67,8 @@ public sealed class TarazpadApiClient
         using var doc = JsonDocument.Parse(body);
         return doc.RootElement.Clone();
     }
+
+    private Uri BuildUri(string relativeUrl) => new($"{ServerUrl}/{relativeUrl.TrimStart('/')}", UriKind.Absolute);
 
     private static string? FindString(JsonElement root, string name)
     {
