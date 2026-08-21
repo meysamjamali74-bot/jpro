@@ -96,7 +96,7 @@ jobs:
           fi
           BANK=$(node -pe "JSON.parse(require('fs').readFileSync('/tmp/bank-create.json','utf8')).id")
           test "$BANK" -gt 0
-          curl -fsS "$B/api/iran/treasury/bank-accounts?q=ملت" -H "$AUTH" >/tmp/banks.json
+          curl -fsS --get "$B/api/iran/treasury/bank-accounts" --data-urlencode 'q=ملت' -H "$AUTH" >/tmp/banks.json
           node - <<'NODE'
           const b=require('/tmp/banks.json');
           const x=b.find(v=>v.code==='BANK18');
