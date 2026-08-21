@@ -39,6 +39,15 @@ $headers=@{Authorization="Bearer $($session.token)"}
 $runtime=Invoke-RestMethod 'http://127.0.0.1:8080/api/system/runtime' -Headers $headers -TimeoutSec 10
 if($runtime.mode -ne 'OFFLINE_LAN' -or $runtime.database -ne 'MySQL' -or $runtime.internetRequired -ne $false){throw "Unexpected runtime descriptor: $($runtime|ConvertTo-Json -Compress)"}
 
+Write-Host 'Smoke testing specialized sales/purchase document APIs...' -ForegroundColor Cyan
+$lookups=Invoke-RestMethod 'http://127.0.0.1:8080/api/native/document-lookups' -Headers $headers -TimeoutSec 15
+if($null -eq $lookups.customers -or $null -eq $lookups.suppliers -or $null -eq $lookups.products -or $null -eq $lookups.warehouses -or $null -eq $lookups.purchaseOrders -or $null -eq $lookups.goodsReceipts){throw 'Native document lookups endpoint returned an incomplete payload.'}
+$salesDocs=Invoke-RestMethod 'http://127.0.0.1:8080/api/native/sales-invoices' -Headers $headers -TimeoutSec 15
+if($null -eq $salesDocs.rows -or $null -eq $salesDocs.summary){throw 'Native sales workspace API payload is invalid.'}
+$purchaseDocs=Invoke-RestMethod 'http://127.0.0.1:8080/api/native/purchase-invoices' -Headers $headers -TimeoutSec 15
+if($null -eq $purchaseDocs.rows -or $null -eq $purchaseDocs.summary){throw 'Native purchase workspace API payload is invalid.'}
+Write-Host 'Specialized document APIs are healthy on installed MySQL schema.' -ForegroundColor Green
+
 $wsh=New-Object -ComObject WScript.Shell
 $link=$wsh.CreateShortcut($shortcut)
 if($link.TargetPath -ne $desktop){throw "Desktop shortcut is not native. Target: $($link.TargetPath)"}
