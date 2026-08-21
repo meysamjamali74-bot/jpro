@@ -3,22 +3,22 @@ RequestExecutionLevel admin
 SetCompressor zlib
 !include "LogicLib.nsh"
 
-!define APPNAME "Tarazpad ERP Web Server"
-!define VERSION "0.2.0"
+!define APPNAME "Tarazpad ERP Enterprise Web Server"
+!define VERSION "1.8.0"
 
 Name "${APPNAME}"
 Caption "${APPNAME} ${VERSION}"
-OutFile "build\Tarazpad-ERP-Web-Server-Setup-${VERSION}.exe"
+OutFile "build\Tarazpad-ERP-Enterprise-Setup-${VERSION}.exe"
 InstallDir "$WINDIR\..\ProgramData\Tarazpad\server"
 ShowInstDetails show
 ShowUninstDetails show
 
-VIProductVersion "0.2.0.0"
-VIAddVersionKey "ProductName" "Tarazpad ERP Web Server"
-VIAddVersionKey "FileDescription" "Tarazpad ERP native Windows web server installer"
+VIProductVersion "1.8.0.0"
+VIAddVersionKey "ProductName" "Tarazpad ERP Enterprise"
+VIAddVersionKey "FileDescription" "Tarazpad ERP Enterprise 1.8 native Windows web server installer"
 VIAddVersionKey "CompanyName" "Tarazpad"
-VIAddVersionKey "FileVersion" "0.2.0"
-VIAddVersionKey "ProductVersion" "0.2.0"
+VIAddVersionKey "FileVersion" "1.8.0"
+VIAddVersionKey "ProductVersion" "1.8.0"
 
 Function .onInit
   ReadEnvStr $0 "ProgramData"
@@ -34,7 +34,7 @@ UninstPage instfiles
 Section "Install Tarazpad ERP Server" SEC_MAIN
   SetShellVarContext all
   SetOutPath "$INSTDIR"
-  DetailPrint "Extracting Tarazpad server payload..."
+  DetailPrint "Extracting Tarazpad Enterprise server payload..."
   SetCompress auto
   File /r /x prereqs "build\staging\*"
   SetOutPath "$INSTDIR\prereqs"
@@ -66,7 +66,7 @@ Section "Install Tarazpad ERP Server" SEC_MAIN
   ${EndIf}
 
   WriteUninstaller "$INSTDIR\Uninstall-TarazpadServer.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "DisplayName" "Tarazpad ERP Web Server"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "DisplayName" "Tarazpad ERP Enterprise"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "Publisher" "Tarazpad"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\TarazpadERPServer" "UninstallString" '"$INSTDIR\Uninstall-TarazpadServer.exe"'
