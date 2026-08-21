@@ -1,0 +1,82 @@
+<UserControl x:Class="Tarazpad.Desktop.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel FlowDirection="RightToLeft">
+            <Border Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="داشبورد مدیریتی شخصی‌سازی‌شده" FontSize="16" FontWeight="Bold"/>
+                        <TextBlock Text="ویجت‌ها را با ماوس بکشید و جابه‌جا کنید؛ انتخاب و ترتیب برای کاربر فعلی ذخیره می‌شود." Foreground="#7D899B" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="HealthText" Text="● متصل" Foreground="#0F9D68" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                        <Button Content="⚙ شخصی‌سازی ویجت‌ها" Click="CustomizeButton_Click" Padding="16,9" Background="#0E2A4A" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <ItemsControl x:Name="WidgetsItems" ItemsSource="{Binding Widgets}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel IsItemsHost="True"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Width="258" MinHeight="126" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="17" Margin="0,0,12,12"
+                                AllowDrop="True" PreviewMouseLeftButtonDown="Widget_MouseLeftButtonDown" PreviewMouseMove="Widget_MouseMove" DragEnter="Widget_DragEnter" Drop="Widget_Drop" Cursor="Hand">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Title}" Foreground="#66758A" FontSize="11" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="1" Text="⋮⋮" Foreground="#A6B0BF" FontSize="14" ToolTip="برای جابه‌جایی بکشید"/>
+                                </Grid>
+                                <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,9,0,7">
+                                    <TextBlock Text="{Binding Value}" FontSize="23" FontWeight="Bold" Foreground="#102A43" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <TextBlock Grid.Row="2" Text="{Binding Unit}" Foreground="#94A3B8" FontSize="10"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border x:Name="EmptyDashboard" Visibility="Collapsed" Background="#FFF8E8" BorderBrush="#F1D48A" BorderThickness="1" CornerRadius="12" Padding="22" Margin="0,2,0,14">
+                <StackPanel>
+                    <TextBlock Text="هیچ ویجتی انتخاب نشده است." FontWeight="Bold" Foreground="#8A5A00"/>
+                    <TextBlock Text="از دکمه «شخصی‌سازی ویجت‌ها» شاخص‌های مورد نیاز خود را فعال کنید." Foreground="#8A6A2A" Margin="0,7,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Grid Margin="0,2,0,0">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="1.35*"/><ColumnDefinition Width="0.65*"/></Grid.ColumnDefinitions>
+                <Border Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="12" Padding="22" Margin="0,0,7,0">
+                    <StackPanel>
+                        <TextBlock Text="مرکز کنترل مالی" FontSize="16" FontWeight="Bold"/>
+                        <TextBlock Text="کنترل‌های روزانه مدیر مالی" Foreground="#7D899B" FontSize="11" Margin="0,6,0,14"/>
+                        <Border Background="#EEF4FF" CornerRadius="10" Padding="16">
+                            <TextBlock Text="مانده مطالبات، بانک و صندوق، اسناد ثبت‌نشده، کسری/اضافه انبار، چک‌های نزدیک سررسید و خطاهای مالیاتی باید در کارتابل روزانه قابل پیگیری باشند." TextWrapping="Wrap" Foreground="#31558E" LineHeight="22" FontSize="11"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="#0E2A4A" CornerRadius="12" Padding="22" Margin="7,0,0,0">
+                    <StackPanel>
+                        <TextBlock Text="وضعیت داده" Foreground="White" FontSize="16" FontWeight="Bold"/>
+                        <TextBlock x:Name="LastRefreshText" Text="" Foreground="#B8C8DA" FontSize="10" Margin="0,15,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="چیدمان داشبورد به حساب کاربری متصل است و روی سیستم‌های دیگر همان کاربر قابل بازیابی است." Foreground="#9CB3CD" FontSize="10" TextWrapping="Wrap" Margin="0,14,0,0" LineHeight="19"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

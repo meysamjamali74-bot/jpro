@@ -1,0 +1,77 @@
+<UserControl x:Class="Tarazpad.Desktop.Views.SalesWorkspaceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid FlowDirection="RightToLeft">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="12" Padding="18">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="فروش و صورتحساب" FontSize="19" FontWeight="Bold"/>
+                    <TextBlock Text="ثبت فاکتور چندردیفه، کنترل مالیات، انبار و ثبت قطعی حسابداری" Foreground="#7B8798" FontSize="11" Margin="0,6,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" FlowDirection="LeftToRight" VerticalAlignment="Center">
+                    <Button Content="بازخوانی" Width="94" Style="{StaticResource SecondaryButton}" Click="Refresh_Click"/>
+                    <Button Content="+ فاکتور فروش" Width="130" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="New_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,12,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.5*"/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Margin="0,0,6,0"><TextBlock Text="جست‌وجو" FontSize="10" Foreground="#64748B"/><TextBox x:Name="SearchBox" Height="37" Margin="0,5,0,0" KeyDown="SearchBox_KeyDown"/></StackPanel>
+                <StackPanel Grid.Column="1" Margin="6,0"><TextBlock Text="وضعیت" FontSize="10" Foreground="#64748B"/><ComboBox x:Name="StatusBox" Height="37" Margin="0,5,0,0"><ComboBoxItem Tag="" Content="همه" IsSelected="True"/><ComboBoxItem Tag="DRAFT" Content="پیش‌نویس"/><ComboBoxItem Tag="OUTSTANDING" Content="مانده‌دار"/><ComboBoxItem Tag="PAID" Content="تسویه‌شده"/><ComboBoxItem Tag="OVERDUE" Content="سررسیدگذشته"/></ComboBox></StackPanel>
+                <StackPanel Grid.Column="2" Margin="6,0"><TextBlock Text="نوع" FontSize="10" Foreground="#64748B"/><ComboBox x:Name="ClassificationBox" Height="37" Margin="0,5,0,0"><ComboBoxItem Tag="" Content="همه" IsSelected="True"/><ComboBoxItem Tag="OFFICIAL" Content="رسمی"/><ComboBoxItem Tag="NON_OFFICIAL" Content="غیررسمی"/></ComboBox></StackPanel>
+                <StackPanel Grid.Column="3" Margin="6,0"><TextBlock Text="از تاریخ شمسی" FontSize="10" Foreground="#64748B"/><TextBox x:Name="FromBox" Height="37" Margin="0,5,0,0" FlowDirection="LeftToRight"/></StackPanel>
+                <StackPanel Grid.Column="4" Margin="6,0"><TextBlock Text="تا تاریخ شمسی" FontSize="10" Foreground="#64748B"/><TextBox x:Name="ToBox" Height="37" Margin="0,5,0,0" FlowDirection="LeftToRight"/></StackPanel>
+                <Button Grid.Column="5" Content="اعمال فیلتر" Width="98" Height="37" Margin="10,19,0,0" Style="{StaticResource SecondaryButton}" Click="Filter_Click"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="0,12,0,12">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <Border Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="10" Padding="13" Margin="0,0,5,0"><StackPanel><TextBlock Text="تعداد فاکتور" Foreground="#7A8798" FontSize="10"/><TextBlock x:Name="CountKpi" Text="0" FontSize="18" FontWeight="Bold" Margin="0,5,0,0"/></StackPanel></Border>
+            <Border Grid.Column="1" Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="10" Padding="13" Margin="5,0"><StackPanel><TextBlock Text="فروش خالص" Foreground="#7A8798" FontSize="10"/><TextBlock x:Name="NetKpi" Text="0" FontSize="18" FontWeight="Bold" Margin="0,5,0,0"/></StackPanel></Border>
+            <Border Grid.Column="2" Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="10" Padding="13" Margin="5,0"><StackPanel><TextBlock Text="مانده وصول" Foreground="#7A8798" FontSize="10"/><TextBlock x:Name="OutstandingKpi" Text="0" FontSize="18" FontWeight="Bold" Margin="0,5,0,0"/></StackPanel></Border>
+            <Border Grid.Column="3" Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="10" Padding="13" Margin="5,0,0,0"><StackPanel><TextBlock Text="پیش‌نویس" Foreground="#7A8798" FontSize="10"/><TextBlock x:Name="DraftKpi" Text="0" FontSize="18" FontWeight="Bold" Margin="0,5,0,0"/></StackPanel></Border>
+        </Grid>
+
+        <Border Grid.Row="3" Background="White" BorderBrush="#E6EBF2" BorderThickness="1" CornerRadius="12" Padding="1">
+            <Grid>
+                <DataGrid x:Name="Grid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" AlternatingRowBackground="#FBFCFE" MouseDoubleClick="Grid_MouseDoubleClick">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="شماره" Binding="{Binding [invoice_no]}" Width="130"/>
+                        <DataGridTextColumn Header="تاریخ" Binding="{Binding [invoice_date]}" Width="105"/>
+                        <DataGridTextColumn Header="مشتری" Binding="{Binding [customer]}" Width="*" MinWidth="170"/>
+                        <DataGridTextColumn Header="انبار" Binding="{Binding [warehouse]}" Width="130"/>
+                        <DataGridTextColumn Header="نوع" Binding="{Binding [invoice_classification]}" Width="95"/>
+                        <DataGridTextColumn Header="تسویه" Binding="{Binding [settlement_type]}" Width="95"/>
+                        <DataGridTextColumn Header="وضعیت" Binding="{Binding [status]}" Width="110"/>
+                        <DataGridTextColumn Header="خالص" Binding="{Binding [net_total]}" Width="125"/>
+                        <DataGridTextColumn Header="مانده" Binding="{Binding [outstanding_amount]}" Width="125"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+                <Border x:Name="LoadingPanel" Background="#ECFFFFFF" Visibility="Collapsed" CornerRadius="11"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"><ProgressBar Width="180" Height="5" IsIndeterminate="True"/><TextBlock Text="در حال دریافت فاکتورها..." Foreground="#64748B" FontSize="11" Margin="0,12,0,0"/></StackPanel></Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="4" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText" Foreground="#64748B" FontSize="10" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" FlowDirection="LeftToRight">
+                <Button Content="جزئیات" Width="94" Style="{StaticResource SecondaryButton}" Click="Details_Click"/>
+                <Button Content="ثبت قطعی" Width="105" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="Post_Click"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

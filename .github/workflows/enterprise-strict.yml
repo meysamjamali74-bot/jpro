@@ -101,6 +101,9 @@ jobs:
           PAY=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/treasury/payments -H "$FA" -H 'content-type: application/json' -d "{\"partyId\":$SUPPLIER,\"paymentDate\":\"2026-08-13\",\"method\":\"BANK\",\"bankAccountId\":$BANK,\"amount\":770000,\"idempotencyKey\":\"STRICT-PAY-1\",\"allocations\":[{\"purchaseInvoiceId\":$PI,\"amount\":770000}]}" | jq -r .id)
           test "$PAY" -gt 0
 
+          # WMS/accounting policy is explicit: physical goods are auto-issued from real FIFO receipt layers.
+          curl -fsS -X PUT http://127.0.0.1:8080/api/iran/accounting-policy -H "$FA" -H 'content-type: application/json' -d '{"inventoryIssuePolicy":"AUTO_ON_INVOICE","revenueRecognition":"INVOICE","allowNegativeInventory":false}' | jq -e '.ok==true'
+
           # Two posted sales invoices attributed to the real salesperson.
           INV1=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/sales-invoices -H "$SA" -H 'content-type: application/json' -d "{\"customerPartyId\":$CUSTOMER,\"invoiceDate\":\"2026-08-14\",\"invoiceClassification\":\"NON_OFFICIAL\",\"settlementType\":\"CREDIT\",\"salespersonUserId\":$SALES_ID,\"lines\":[{\"productId\":$PRODUCT,\"qty\":1,\"unitPrice\":100000}]}" | jq -r .id)
           curl -fsS -X POST "http://127.0.0.1:8080/api/iran/sales-invoices/$INV1/post" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.ok==true and .amounts.COGS_TOTAL==70000 and .grossProfit==30000'

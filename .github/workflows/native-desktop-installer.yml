@@ -1,0 +1,178 @@
+name: Tarazpad 2.0 Native Windows Desktop Installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [release/tarazpad-native-windows-2-0]
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/api/**'
+      - 'database/**'
+      - 'installer/windows-server/**'
+      - '.github/workflows/native-desktop-installer.yml'
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/api/**'
+      - 'database/**'
+      - 'installer/windows-server/**'
+      - '.github/workflows/native-desktop-installer.yml'
+
+concurrency:
+  group: tarazpad-native-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test-native-windows:
+    runs-on: windows-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Restore and build native WPF client
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore apps/desktop/Tarazpad.Desktop/Tarazpad.Desktop.csproj
+          dotnet build apps/desktop/Tarazpad.Desktop/Tarazpad.Desktop.csproj -c Release --no-restore
+
+      - name: Publish self-contained Windows x64 client
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out='installer/windows-server/build/desktop-publish'
+          Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue
+          dotnet publish apps/desktop/Tarazpad.Desktop/Tarazpad.Desktop.csproj -c Release -r win-x64 --self-contained true -o $out
+          $exe=Join-Path $out 'Tarazpad.Desktop.exe'
+          if(!(Test-Path $exe)){throw 'Native WPF executable was not published.'}
+          if((Get-Item $exe).Length -lt 1MB){throw 'Published native client is unexpectedly small.'}
+
+      - name: Native UI architecture guard
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $desktopFiles = @(git ls-files 'apps/desktop/Tarazpad.Desktop') | Where-Object { [IO.Path]::GetExtension($_) -in '.cs','.xaml','.csproj' }
+          if(!$desktopFiles.Count){throw 'No tracked native desktop source files found.'}
+          $matches = @($desktopFiles | ForEach-Object { Select-String -Path $_ -Pattern 'WebView2|Process\.Start\("http|explorer\.exe.*http' })
+          if($matches.Count){$matches | ForEach-Object { Write-Host "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }; throw 'Browser/WebView dependency detected in tracked native desktop source.'}
+          if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Views/MainWindow.xaml')){throw 'Native MainWindow missing.'}
+          if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Views/ReportCenterView.xaml')){throw 'Native financial report center missing.'}
+          if(!(Test-Path 'apps/desktop/Tarazpad.Desktop/Infrastructure/PersianDate.cs')){throw 'Persian date support missing.'}
+          Write-Host "Native architecture guard passed across $($desktopFiles.Count) tracked source files."
+
+      - name: Install production API dependencies
+        working-directory: apps/api
+        shell: powershell
+        run: npm install --omit=dev
+
+      - name: Prepare unified offline staging payload
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $publish='installer/windows-server/build/desktop-publish'
+          $stage='installer/windows-server/build/staging'
+          New-Item "$stage/app/apps/api","$stage/app/apps/web","$stage/app/database","$stage/runtime","$stage/prereqs","$stage/desktop" -ItemType Directory -Force | Out-Null
+          Copy-Item 'apps/api/*' "$stage/app/apps/api" -Recurse -Force
+          Copy-Item 'apps/web/*' "$stage/app/apps/web" -Recurse -Force
+          Copy-Item 'database/*' "$stage/app/database" -Recurse -Force
+          Copy-Item "$publish/*" "$stage/desktop" -Recurse -Force
+          Copy-Item 'installer/windows-server/Install-TarazpadServer.ps1' "$stage/Install-TarazpadServer.ps1" -Force
+          Copy-Item 'installer/windows-server/Install-DatabaseGuards.ps1' "$stage/Install-DatabaseGuards.ps1" -Force
+          Copy-Item 'installer/windows-server/HardClose-DatabaseGuards.sql' "$stage/HardClose-DatabaseGuards.sql" -Force
+          Copy-Item 'installer/windows-server/Configure-TarazpadNative.ps1' "$stage/Configure-TarazpadNative.ps1" -Force
+          Copy-Item (Get-Command node.exe).Source "$stage/runtime/node.exe" -Force
+          "Tarazpad Native Windows 2.0 payload $(Get-Date -Format o)" | Set-Content "$stage/BUILD-INFO.txt"
+
+      - name: Bundle MySQL 8.4.11
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out='installer/windows-server/build/staging/prereqs/mysql-8.4.11-winx64.zip'
+          $urls=@('https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.11-winx64.zip','https://dev.mysql.com/get/Downloads/MySQL-8.4/mysql-8.4.11-winx64.zip')
+          $ok=$false
+          foreach($url in $urls){
+            try{curl.exe -L --fail --retry 4 --retry-delay 5 -A 'Mozilla/5.0 Tarazpad-Build' -o $out $url;if((Test-Path $out)-and(Get-Item $out).Length -gt 100MB){$ok=$true;break}}catch{Write-Warning $_}
+          }
+          if(!$ok){throw 'Unable to obtain official MySQL 8.4.11 Windows ZIP.'}
+          7z t $out | Out-Host
+          if($LASTEXITCODE -ne 0){throw 'MySQL archive integrity test failed.'}
+
+      - name: Bundle Visual C++ runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out='installer/windows-server/build/staging/prereqs/vc_redist.x64.exe'
+          curl.exe -L --fail --retry 4 --retry-delay 3 -o $out 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+          if(!(Test-Path $out)-or(Get-Item $out).Length -lt 5MB){throw 'VC++ runtime download failed.'}
+
+      - name: Static backend and setup checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Install-TarazpadServer.ps1' -Raw))
+          $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Install-DatabaseGuards.ps1' -Raw))
+          $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Configure-TarazpadNative.ps1' -Raw))
+          $null=[scriptblock]::Create((Get-Content 'installer/windows-server/CI-TestTarazpadNative2.ps1' -Raw))
+          node --check apps/api/src/server.js
+          node --check apps/api/src/auth.js
+          node --check apps/api/src/customer_club_offline.js
+          npm --prefix apps/api test
+          if(!(Test-Path 'installer/windows-server/build/staging/app/apps/api/node_modules/mysql2')){throw 'Production Node dependencies were not staged.'}
+
+      - name: Install NSIS build tool
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Continue'
+          $known=@('C:\Program Files (x86)\NSIS\makensis.exe','C:\Program Files\NSIS\makensis.exe')
+          $found=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if(!$found){$found=$known|Where-Object{Test-Path $_}|Select-Object -First 1}
+          if(!$found){choco install nsis -y --no-progress --force;$found=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source;if(!$found){$found=$known|Where-Object{Test-Path $_}|Select-Object -First 1}}
+          if(!$found){throw 'NSIS makensis.exe unavailable.'}
+          Write-Host "NSIS ready: $found"
+
+      - name: Build unified native Setup EXE
+        working-directory: installer/windows-server
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $makensis=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if(!$makensis){$makensis=@('C:\Program Files (x86)\NSIS\makensis.exe','C:\Program Files\NSIS\makensis.exe')|Where-Object{Test-Path $_}|Select-Object -First 1}
+          & $makensis 'TarazpadNative.nsi'
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $exe='build/Tarazpad-ERP-Native-Windows-Setup-2.0.0.exe'
+          if(!(Test-Path $exe)){throw 'Native unified Setup EXE not produced.'}
+          $hash=Get-FileHash $exe -Algorithm SHA256
+          "SHA256  $($hash.Hash)  Tarazpad-ERP-Native-Windows-Setup-2.0.0.exe" | Set-Content 'build/SHA256SUMS-NATIVE-2.0.txt'
+
+      - name: Full native Windows install, WPF launch and reinstall test
+        timeout-minutes: 15
+        shell: powershell
+        run: ./installer/windows-server/CI-TestTarazpadNative2.ps1
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-Native-2.0-Diagnostics
+          path: |
+            C:/ProgramData/Tarazpad/server/logs/**
+            C:/ProgramData/Tarazpad/server/config/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload final native Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-ERP-Native-Windows-Setup-2.0.0
+          path: |
+            installer/windows-server/build/Tarazpad-ERP-Native-Windows-Setup-2.0.0.exe
+            installer/windows-server/build/SHA256SUMS-NATIVE-2.0.txt
+          if-no-files-found: error
+          retention-days: 90

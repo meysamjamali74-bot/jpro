@@ -82,7 +82,7 @@ jobs:
           MYSQL_USER: tarazpad
           MYSQL_PASSWORD: p15_db_2026
           TARAZPAD_ADMIN_EMAIL: phase15@tarazpad.test
-        run: node apps/api/test/phase15_e2e.mjs
+        run: node apps/api/test/phase15_e2e_runner.mjs
       - name: Verify migration completeness and database invariants
         env:
           MYSQL_PWD: p15_db_2026

@@ -11,6 +11,7 @@ import { registerEnterpriseRoutes } from './enterprise.js';
 import { registerIranExtensionRoutes } from './iran_extensions.js';
 import { registerIranRoutes } from './iran.js';
 import { registerCustomerClubOfflineRoutes } from './customer_club_offline.js';
+import { registerNativeDocumentRoutes } from './native_documents_v2.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
@@ -84,6 +85,7 @@ registerEnterpriseRoutes(app);
 registerIranExtensionRoutes(app);
 registerIranRoutes(app);
 registerCustomerClubOfflineRoutes(app);
+registerNativeDocumentRoutes(app);
 app.use('/api',(req,res)=>res.status(404).json({error:'API_NOT_FOUND',path:req.path}));
 app.use(express.static(webDir,{index:'index.html',maxAge:process.env.NODE_ENV==='production'?'1h':0}));
 app.use((_req,res)=>res.sendFile(path.join(webDir,'index.html')));

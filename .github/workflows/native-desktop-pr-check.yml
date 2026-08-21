@@ -1,0 +1,45 @@
+name: Tarazpad Native Desktop PR Check
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/api/**'
+      - 'database/**'
+      - 'installer/windows-server/**'
+      - '.github/workflows/native-desktop-*.yml'
+
+jobs:
+  native-compile-gate:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile native WPF client
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet restore apps/desktop/Tarazpad.Desktop/Tarazpad.Desktop.csproj
+          dotnet build apps/desktop/Tarazpad.Desktop/Tarazpad.Desktop.csproj -c Release --no-restore
+      - name: Publish Windows x64 client
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          dotnet publish apps/desktop/Tarazpad.Desktop/Tarazpad.Desktop.csproj -c Release -r win-x64 --self-contained true -o native-publish
+          if(!(Test-Path 'native-publish/Tarazpad.Desktop.exe')){throw 'Tarazpad.Desktop.exe missing.'}
+      - name: Guard against browser UI regression
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $files = @(git ls-files 'apps/desktop/Tarazpad.Desktop') | Where-Object { [IO.Path]::GetExtension($_) -in '.cs','.xaml','.csproj' }
+          if(!$files.Count){throw 'No tracked native desktop source files found.'}
+          $matches = @($files | ForEach-Object { Select-String -Path $_ -Pattern 'WebView2|Process\.Start\("http|explorer\.exe.*http' })
+          if($matches.Count){$matches | ForEach-Object { Write-Host "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }; throw 'Browser/WebView regression detected in tracked native source.'}
+          Write-Host "Native architecture guard passed across $($files.Count) tracked source files."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tarazpad-Native-Desktop-2.0-Preview
+          path: native-publish/**
+          retention-days: 7
