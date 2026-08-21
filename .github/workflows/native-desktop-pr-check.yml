@@ -32,8 +32,12 @@ jobs:
       - name: Guard against browser UI regression
         shell: powershell
         run: |
-          $files=Get-ChildItem 'apps/desktop/Tarazpad.Desktop' -Recurse -File | Where-Object { $_.Extension -in '.cs','.xaml','.csproj' }
-          if($files|Select-String -Pattern 'WebView2|Process\.Start\("http|explorer\.exe.*http' -Quiet){throw 'Browser/WebView regression detected in native source.'}
+          $ErrorActionPreference='Stop'
+          $files = @(git ls-files 'apps/desktop/Tarazpad.Desktop') | Where-Object { [IO.Path]::GetExtension($_) -in '.cs','.xaml','.csproj' }
+          if(!$files.Count){throw 'No tracked native desktop source files found.'}
+          $matches = @($files | ForEach-Object { Select-String -Path $_ -Pattern 'WebView2|Process\.Start\("http|explorer\.exe.*http' })
+          if($matches.Count){$matches | ForEach-Object { Write-Host "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }; throw 'Browser/WebView regression detected in tracked native source.'}
+          Write-Host "Native architecture guard passed across $($files.Count) tracked source files."
       - uses: actions/upload-artifact@v4
         with:
           name: Tarazpad-Native-Desktop-2.0-Preview
