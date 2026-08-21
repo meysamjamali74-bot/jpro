@@ -65,39 +65,52 @@ public partial class DashboardView : UserControl
         try
         {
             var layout = await App.Api.GetJsonAsync("api/dashboard/layout");
-            if (layout.ValueKind != JsonValueKind.Array) { UpdateEmptyState(); return; }
-
-            var ordered = new List<(string Key, bool Visible, int Order)>();
-            var position = 0;
-            foreach (var item in layout.EnumerateArray())
+            JsonDocument? nestedDocument = null;
+            if (layout.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(layout.GetString()))
             {
-                if (item.ValueKind == JsonValueKind.String)
+                nestedDocument = JsonDocument.Parse(layout.GetString()!);
+                layout = nestedDocument.RootElement.Clone();
+            }
+            try
+            {
+                if (layout.ValueKind != JsonValueKind.Array) { UpdateEmptyState(); return; }
+
+                var ordered = new List<(string Key, bool Visible, int Order)>();
+                var position = 0;
+                foreach (var item in layout.EnumerateArray())
                 {
-                    var key = item.GetString() ?? string.Empty;
-                    if (_catalog.ContainsKey(key)) ordered.Add((key, true, position++));
-                    continue;
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        var key = item.GetString() ?? string.Empty;
+                        if (_catalog.ContainsKey(key)) ordered.Add((key, true, position++));
+                        continue;
+                    }
+                    if (item.ValueKind != JsonValueKind.Object) continue;
+                    var keyValue = item.TryGetProperty("key", out var keyProp) ? keyProp.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(keyValue) || !_catalog.ContainsKey(keyValue)) continue;
+                    var visible = !item.TryGetProperty("visible", out var visibleProp) || visibleProp.ValueKind != JsonValueKind.False;
+                    var order = item.TryGetProperty("order", out var orderProp) && orderProp.TryGetInt32(out var parsed) ? parsed : position;
+                    ordered.Add((keyValue, visible, order));
+                    position++;
                 }
-                if (item.ValueKind != JsonValueKind.Object) continue;
-                var keyValue = item.TryGetProperty("key", out var keyProp) ? keyProp.GetString() : null;
-                if (string.IsNullOrWhiteSpace(keyValue) || !_catalog.ContainsKey(keyValue)) continue;
-                var visible = !item.TryGetProperty("visible", out var visibleProp) || visibleProp.ValueKind != JsonValueKind.False;
-                var order = item.TryGetProperty("order", out var orderProp) && orderProp.TryGetInt32(out var parsed) ? parsed : position;
-                ordered.Add((keyValue, visible, order));
-                position++;
-            }
 
-            if (ordered.Count == 0) { UpdateEmptyState(); return; }
-            Widgets.Clear();
-            _hidden.Clear();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var item in ordered.OrderBy(x => x.Order))
-            {
-                seen.Add(item.Key);
-                if (item.Visible) Widgets.Add(_catalog[item.Key]); else _hidden.Add(item.Key);
+                if (ordered.Count == 0) { UpdateEmptyState(); return; }
+                Widgets.Clear();
+                _hidden.Clear();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in ordered.OrderBy(x => x.Order))
+                {
+                    seen.Add(item.Key);
+                    if (item.Visible) Widgets.Add(_catalog[item.Key]); else _hidden.Add(item.Key);
+                }
+                foreach (var definition in Definitions)
+                    if (!seen.Contains(definition.Key)) Widgets.Add(_catalog[definition.Key]);
+                UpdateEmptyState();
             }
-            foreach (var definition in Definitions)
-                if (!seen.Contains(definition.Key)) Widgets.Add(_catalog[definition.Key]);
-            UpdateEmptyState();
+            finally
+            {
+                nestedDocument?.Dispose();
+            }
         }
         catch
         {
