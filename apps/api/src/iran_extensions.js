@@ -1,6 +1,7 @@
 import { fiscalLockGuardV8 } from './fiscal_lock_guard_v8.js';
 import { registerBankMasterV8Routes } from './bank_master_v8.js';
 import { registerPrintMasterV8Routes } from './print_master_v8.js';
+import { registerCommercialCompatV8Routes } from './commercial_party_service_compat_v8.js';
 import { registerCommercialMasterV8Routes } from './commercial_master_v8.js';
 import { registerStatementFormulaControlsV7 } from './statement_formula_controls_v7.js';
 import { registerComplianceFinalV7 } from './compliance_final_v7.js';
@@ -61,6 +62,7 @@ export function registerIranExtensionRoutes(app){
   app.use(fieldPolicyMiddleware);
 
   // Enterprise 1.8 commercial master data, price lists, logistics and printing.
+  registerCommercialCompatV8Routes(app);
   registerCommercialMasterV8Routes(app);
   registerBankMasterV8Routes(app);
   registerPrintMasterV8Routes(app);
@@ -73,30 +75,6 @@ export function registerIranExtensionRoutes(app){
   registerStatementDesignerV7Routes(app);
   registerComplianceFinalV7(app);
   registerComplianceV7Routes(app);
-
-  // Enterprise 1.7 authoritative route owners with structural formula validation.
-
-  // Enterprise 1.7 authoritative route owners.
-
-  // Enterprise 1.7 authoritative route owners.
-
-  // Enterprise 1.7 authoritative financial/reporting control order.
-
-  // Enterprise 1.7 final control order with compliance source integrity.
-
-  // Enterprise 1.7 final control order with compliance source integrity.
-
-  // Enterprise 1.7 unified statement and close control order.
-
-  // Enterprise 1.7 final deterministic control order.
-
-  // Enterprise 1.7 deterministic control order.
-
-
-  // Historical performance statements must exclude system year-end closing entries.
-
-
-  // Enterprise 1.7: year-end, financial statement designer and statutory compliance.
 
   // Financial reporting overrides precede the underlying reporting routes.
   registerFinanceReportingOverridesV6(app);
