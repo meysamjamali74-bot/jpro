@@ -42,7 +42,7 @@ try{
 Write-Host '[CI] Breaking the app DB credential intentionally to verify safe recovery...'
 $env:MYSQL_PWD=$before.mysqlRootPassword
 $breakSql="ALTER USER 'tarazpad_app'@'127.0.0.1' IDENTIFIED BY 'CI_BROKEN_CREDENTIAL_8xQ7!'; FLUSH PRIVILEGES;"
-& $before.mysqlExe --protocol=tcp --host=127.0.0.1 --port=$before.mysqlPort --user=root --execute=$breakSql 2>$null
+& $before.mysqlExe --protocol=tcp --host=127.0.0.1 --port=$($before.mysqlPort) --user=root --execute=$breakSql 2>$null
 $breakExit=$LASTEXITCODE
 Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
 if($breakExit -ne 0){throw "Unable to create credential-recovery test condition: $breakExit"}
