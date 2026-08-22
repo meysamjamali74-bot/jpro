@@ -1,0 +1,73 @@
+name: Tarazpad RC Database Structural Gate
+on:
+  push:
+    branches: [enterprise-release-candidate-1-7, enterprise-phase-1-8-release]
+  pull_request:
+
+jobs:
+  db-structural-gate:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: rcstruct_root_2026
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: rcstruct_db_2026
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prcstruct_root_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - working-directory: apps/api
+        run: npm install
+      - name: Start API and run migrations
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: rcstruct_db_2026
+          JWT_SECRET: rc_structural_secret_tarazpad_2026_long
+          TARAZPAD_ADMIN_EMAIL: rcstruct@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_RC_Struct_2026!
+          TARAZPAD_ADMIN_NAME: مدیر کنترل ساختاری
+        run: |
+          node apps/api/src/server.js >/tmp/rcstruct.log 2>&1 & echo $! >/tmp/rcstruct.pid
+          ok=0
+          for i in {1..90}; do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/struct-health.json; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != 1 ]; then cat /tmp/rcstruct.log; exit 1; fi
+          jq -e '.ok==true' /tmp/struct-health.json
+      - name: Fresh-schema invariants
+        env: { MYSQL_PWD: rcstruct_db_2026 }
+        run: |
+          docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -utarazpad tarazpad -N -e "SELECT COUNT(*) FROM (SELECT CONSTRAINT_NAME,COUNT(*) c FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA='tarazpad' GROUP BY CONSTRAINT_NAME HAVING c>1) q; SELECT COUNT(*) FROM financial_statement_templates WHERE code IN ('STD_PL','STD_BS'); SELECT COUNT(*) FROM compliance_obligation_types WHERE code IN ('IR_VAT','IR_TAXPAYER_INVOICE','IR_SALARY_TAX','IR_SOCIAL_SECURITY','IR_CORPORATE_TAX'); SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='tarazpad' AND TABLE_NAME IN ('sales_fulfillment_allocations','inventory_cost_layers','period_close_runs','year_end_close_runs','compliance_periods');" >/tmp/struct-inv
+          cat /tmp/struct-inv
+          test "$(sed -n '1p' /tmp/struct-inv)" -eq 0
+          test "$(sed -n '2p' /tmp/struct-inv)" -eq 2
+          test "$(sed -n '3p' /tmp/struct-inv)" -eq 5
+          test "$(sed -n '4p' /tmp/struct-inv)" -eq 5
+      - name: Hard-close guard architecture invariant
+        run: |
+          set -euo pipefail
+          grep -q "HARD_CLOSED" apps/api/src/fiscal_lock_guard_v8.js
+          test -s installer/windows-server/HardClose-DatabaseGuards.sql
+          grep -q "CREATE TRIGGER" installer/windows-server/HardClose-DatabaseGuards.sql
+          grep -q "Install-DatabaseGuards.ps1" installer/windows-server/TarazpadServer.nsi
+      - name: Per-entry balancing invariant helper
+        env: { MYSQL_PWD: rcstruct_db_2026 }
+        run: |
+          docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -utarazpad tarazpad -N -e "SELECT COUNT(*) FROM (SELECT je.id FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id WHERE je.status IN ('POSTED','LOCKED') GROUP BY je.id HAVING ABS(SUM(jl.debit-jl.credit))>=1) z; SELECT COUNT(*) FROM inventory_balances ib JOIN company_accounting_policies p ON p.company_id=ib.company_id WHERE p.allow_negative_inventory=0 AND ib.on_hand_qty<0;" >/tmp/accounting-inv
+          test "$(sed -n '1p' /tmp/accounting-inv)" -eq 0
+          test "$(sed -n '2p' /tmp/accounting-inv)" -eq 0
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: rc-structural-diagnostics, path: /tmp/rcstruct.log }

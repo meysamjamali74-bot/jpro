@@ -1,0 +1,80 @@
+name: Tarazpad Enterprise 1.8 Commercial Detail Gate
+on:
+  push:
+    branches: [enterprise-release-candidate-1-7]
+  pull_request:
+
+jobs:
+  phase18-e2e:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_p18_2026
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: phase18_db_2026
+        ports: [3306:3306]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_p18_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: apps/api
+        run: npm install
+      - name: Syntax and migration namespace gates
+        run: |
+          set -euo pipefail
+          node --check apps/api/src/commercial_master_v8.js
+          node --check apps/web/phase18-ui.js
+          node --check apps/api/src/iran_extensions.js
+          npm --prefix apps/api test
+      - name: Assert Phase 1.8 runtime wiring
+        run: |
+          grep -q "registerCommercialMasterV8Routes" apps/api/src/iran_extensions.js
+          grep -q "phase18-ui.js" apps/web/fa-overlay.js
+      - name: Start Tarazpad on fresh MySQL 8.4
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: phase18_db_2026
+          JWT_SECRET: phase18_diagnostic_secret_2026_long_enough
+          TARAZPAD_ADMIN_EMAIL: phase18@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Phase18_2026!
+          TARAZPAD_ADMIN_NAME: Phase18 Admin
+        run: |
+          node apps/api/src/server.js > /tmp/phase18-server.log 2>&1 &
+          echo $! >/tmp/tarazpad.pid
+          ok=0
+          for i in {1..75}; do if curl -fsS http://127.0.0.1:8080/api/health >/dev/null; then ok=1; break; fi; sleep 2; done
+          if [ "$ok" != "1" ]; then cat /tmp/phase18-server.log; exit 1; fi
+      - name: Run Phase 1.8 E2E
+        env:
+          TARAZPAD_URL: http://127.0.0.1:8080
+          TARAZPAD_ADMIN_EMAIL: phase18@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_Phase18_2026!
+        run: node scripts/e2e_phase18.mjs 2>&1 | tee /tmp/phase18-e2e.log
+      - name: Verify critical Phase 1.8 schema
+        env:
+          MYSQL_PWD: phase18_db_2026
+        run: |
+          mysql -h127.0.0.1 -utarazpad tarazpad -Nse "
+            SELECT COUNT(*)=10 FROM information_schema.tables
+            WHERE table_schema='tarazpad' AND table_name IN
+            ('product_groups','product_media','party_groups','party_contacts','party_addresses','party_bank_accounts','price_lists','price_list_items','logistics_waybills','print_profiles');"
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase18-diagnostic-logs
+          path: |
+            /tmp/phase18-e2e.log
+            /tmp/phase18-server.log

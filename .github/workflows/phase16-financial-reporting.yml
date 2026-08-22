@@ -1,0 +1,100 @@
+name: Tarazpad Enterprise 1.6 Financial Reporting Gate
+on:
+  push:
+    branches: [enterprise-phase-1-6, enterprise-phase-1-8-release]
+  pull_request:
+
+jobs:
+  phase16-financial-gate:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_p16_2026
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: p16_db_2026
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_p16_2026 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: apps/api
+        run: npm install
+      - name: Static syntax and unit tests
+        run: |
+          set -euo pipefail
+          find apps/api/src apps/api/test apps/web -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+          npm --prefix apps/api test
+      - name: Start API on fresh MySQL 8.4
+        env:
+          PORT: 8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: p16_db_2026
+          JWT_SECRET: phase16_gate_secret_tarazpad_2026_long_enough
+          TARAZPAD_ADMIN_EMAIL: phase16@tarazpad.test
+          TARAZPAD_ADMIN_PASSWORD: Strong_P16_Admin_2026!
+          TARAZPAD_ADMIN_NAME: مدیر کنترل گزارشگری مالی
+        run: |
+          node apps/api/src/server.js >/tmp/tarazpad-phase16.log 2>&1 &
+          echo $! >/tmp/tarazpad-phase16.pid
+          ok=0
+          for i in {1..90}; do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/p16-health.json; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then cat /tmp/tarazpad-phase16.log; exit 1; fi
+          jq -e '.ok == true' /tmp/p16-health.json
+      - name: Install dedicated-server hard-close database guards
+        env:
+          MYSQL_PWD: root_p16_2026
+        run: |
+          set -euo pipefail
+          docker run --rm -i --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -uroot tarazpad < installer/windows-server/HardClose-DatabaseGuards.sql
+          count=$(docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -uroot tarazpad -N -e "SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='tarazpad' AND TRIGGER_NAME IN ('trg_journal_hard_close_delete','trg_journal_hard_close_update','trg_journal_line_hard_close_insert','trg_journal_line_hard_close_update','trg_journal_line_hard_close_delete');")
+          test "$count" -eq 5
+      - name: Financial reporting and hard-close E2E
+        env:
+          TEST_BASE_URL: http://127.0.0.1:8080
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: p16_db_2026
+          TARAZPAD_ADMIN_EMAIL: phase16@tarazpad.test
+        run: node apps/api/test/phase16_financial_reporting_e2e.mjs
+      - name: Database close-control invariants
+        env:
+          MYSQL_PWD: p16_db_2026
+        run: |
+          docker run --rm --network host -e MYSQL_PWD mysql:8.4 mysql -h127.0.0.1 -P3306 -utarazpad tarazpad -N -e "SELECT COUNT(*) FROM fiscal_years; SELECT COUNT(*) FROM fiscal_periods; SELECT COUNT(*) FROM period_close_runs WHERE status='REOPENED'; SELECT COUNT(*) FROM financial_report_snapshots; SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema='tarazpad' AND trigger_name LIKE 'trg_journal%hard_close%'; SELECT ABS(COALESCE(SUM(jl.debit-jl.credit),0)) FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE je.company_id=1 AND je.status IN ('POSTED','LOCKED');" >/tmp/p16-invariants.txt
+          cat /tmp/p16-invariants.txt
+          test "$(sed -n '1p' /tmp/p16-invariants.txt)" -ge 1
+          test "$(sed -n '2p' /tmp/p16-invariants.txt)" -ge 12
+          test "$(sed -n '3p' /tmp/p16-invariants.txt)" -ge 1
+          test "$(sed -n '4p' /tmp/p16-invariants.txt)" -ge 1
+          test "$(sed -n '5p' /tmp/p16-invariants.txt)" -ge 3
+          awk 'NR==6 { exit !($1 < 1) }' /tmp/p16-invariants.txt
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/tarazpad-phase16.pid ]; then kill $(cat /tmp/tarazpad-phase16.pid) || true; fi
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarazpad-phase16-financial-diagnostics
+          path: |
+            /tmp/tarazpad-phase16.log
+            /tmp/p16-invariants.txt
+          if-no-files-found: ignore

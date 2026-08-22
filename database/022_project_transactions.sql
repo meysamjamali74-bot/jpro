@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS project_transactions (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_id BIGINT UNSIGNED NOT NULL,
+  project_id BIGINT UNSIGNED NOT NULL,
+  transaction_date DATE NOT NULL,
+  transaction_type ENUM('REVENUE','DIRECT_COST','INDIRECT_COST','ADVANCE','RETENTION','RECEIPT','PAYMENT','ADJUSTMENT') NOT NULL,
+  amount DECIMAL(20,2) NOT NULL,
+  source_type VARCHAR(80) NULL,
+  source_id BIGINT UNSIGNED NULL,
+  journal_entry_id BIGINT UNSIGNED NULL,
+  description VARCHAR(1000) NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY ix_project_tx(project_id,transaction_date,transaction_type),
+  UNIQUE KEY uq_project_source(company_id,project_id,source_type,source_id,transaction_type),
+  CONSTRAINT fk_pt_company FOREIGN KEY(company_id) REFERENCES companies(id),
+  CONSTRAINT fk_pt_project FOREIGN KEY(project_id) REFERENCES management_projects(id),
+  CONSTRAINT fk_pt_journal FOREIGN KEY(journal_entry_id) REFERENCES journal_entries(id),
+  CONSTRAINT fk_pt_user FOREIGN KEY(created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

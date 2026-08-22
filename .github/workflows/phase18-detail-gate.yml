@@ -1,0 +1,136 @@
+name: Enterprise 1.8 Detail and Printing Gate
+
+on:
+  push:
+    branches: [enterprise-phase-1-8-ui-documents-v2, enterprise-phase-1-8-release]
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'database/**'
+      - 'scripts/e2e_phase18.mjs'
+      - '.github/workflows/phase18-detail-gate.yml'
+  workflow_dispatch:
+
+jobs:
+  detail-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: tarazpad
+          MYSQL_USER: tarazpad
+          MYSQL_PASSWORD: tarazpad
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: tarazpad
+      MYSQL_USER: tarazpad
+      MYSQL_PASSWORD: tarazpad
+      JWT_SECRET: phase18_detail_secret_2026_long_enough
+      TARAZPAD_ADMIN_EMAIL: admin@tarazpad.test
+      TARAZPAD_ADMIN_PASSWORD: Phase18_Strong_Test_2026!
+      TARAZPAD_ADMIN_NAME: مدیر تست ترازپاد
+      PORT: 8080
+      TARAZPAD_URL: http://127.0.0.1:8080
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install API dependencies
+        run: npm --prefix apps/api install
+
+      - name: Syntax and unit checks
+        run: |
+          set -euo pipefail
+          find apps/api/src apps/web -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check scripts/e2e_phase18.mjs
+          npm --prefix apps/api test
+
+      - name: Fresh MySQL migration and verified startup
+        run: |
+          set -euo pipefail
+          npm --prefix apps/api start >/tmp/tarazpad.log 2>&1 &
+          echo $! >/tmp/tarazpad.pid
+          ok=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/tmp/health.json; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo 'Tarazpad API did not become healthy.'
+            cat /tmp/tarazpad.log
+            exit 1
+          fi
+          node -e "const j=require('/tmp/health.json'); if(j.ok!==true) process.exit(1)"
+
+      - name: Enterprise 1.8 master-data and commercial E2E
+        run: node scripts/e2e_phase18.mjs
+
+      - name: Detailed bank and authoritative print E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          B=http://127.0.0.1:8080
+          TOKEN=$(curl -fsS -X POST "$B/api/auth/login" -H 'content-type: application/json' -d '{"email":"admin@tarazpad.test","password":"Phase18_Strong_Test_2026!"}' | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).token")
+          AUTH="Authorization: Bearer $TOKEN"
+
+          BANK_STATUS=$(curl -sS -o /tmp/bank-create.json -w '%{http_code}' -X POST "$B/api/iran/treasury/bank-accounts" -H "$AUTH" -H 'content-type: application/json' -d '{"code":"BANK18","bankName":"بانک ملت","accountTitle":"حساب جاری اصلی","branchName":"مرکزی","branchCode":"001","accountType":"جاری","accountHolder":"شرکت تست","accountNo":"123456789","iban":"IR180120000000001234567890","cardNo":"6104330000000018","currency":"IRR","showOnSalesInvoice":true,"showOnReceipt":true,"isDefault":true,"isActive":true}')
+          if [ "$BANK_STATUS" -lt 200 ] || [ "$BANK_STATUS" -ge 300 ]; then
+            echo "Bank account create failed with HTTP $BANK_STATUS"
+            cat /tmp/bank-create.json
+            exit 1
+          fi
+          BANK=$(node -pe "JSON.parse(require('fs').readFileSync('/tmp/bank-create.json','utf8')).id")
+          test "$BANK" -gt 0
+          curl -fsS --get "$B/api/iran/treasury/bank-accounts" --data-urlencode 'q=ملت' -H "$AUTH" >/tmp/banks.json
+          node - <<'NODE'
+          const b=require('/tmp/banks.json');
+          const x=b.find(v=>v.code==='BANK18');
+          if(!x) throw new Error('bank master missing');
+          if(Number(x.show_on_sales_invoice)!==1 || Number(x.show_on_receipt)!==1) throw new Error('bank print flags missing');
+          if(Object.prototype.hasOwnProperty.call(x,'cvv2')) throw new Error('CVV2 must not be persisted or returned');
+          NODE
+
+          INV=$(mysql -h127.0.0.1 -P3306 -utarazpad -ptarazpad -Dtarazpad -Nse "SELECT id FROM sales_invoices ORDER BY id DESC LIMIT 1")
+          test -n "$INV"
+          PRINT_STATUS=$(curl -sS -o /tmp/invoice-print.json -w '%{http_code}' "$B/api/iran/print/sales-invoices/$INV" -H "$AUTH")
+          if [ "$PRINT_STATUS" -lt 200 ] || [ "$PRINT_STATUS" -ge 300 ]; then
+            echo "Invoice print model failed with HTTP $PRINT_STATUS"
+            cat /tmp/invoice-print.json
+            exit 1
+          fi
+          node - <<'NODE'
+          const j=require('/tmp/invoice-print.json');
+          if(!Array.isArray(j.lines)||!j.lines.length) throw new Error('invoice print lines missing');
+          if(!j.security||j.security.cvvStored!==false) throw new Error('print security contract invalid');
+          NODE
+
+      - name: Web and printing UI smoke
+        run: |
+          set -euo pipefail
+          grep -q "load('/phase18-ui.js')" apps/web/fa-overlay.js
+          grep -q "load('/phase18-final-ui.js')" apps/web/fa-overlay.js
+          grep -q 'خرید، فروش و سود کالا' apps/web/phase18-ui.js
+          grep -q 'لیست قیمت تصویری' apps/web/phase18-ui.js
+          grep -q 'بارنامه و حمل' apps/web/phase18-ui.js
+          grep -q 'مرکز چاپ حرفه‌ای اسناد' apps/web/phase18-final-ui.js
+          grep -q 'حساب‌های بانکی' apps/web/phase18-final-ui.js
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          tail -n 400 /tmp/tarazpad.log || true

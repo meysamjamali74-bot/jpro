@@ -1,0 +1,82 @@
+name: Tarazpad Phase 1.4 Wire Modules
+on:
+  push:
+    branches: [enterprise-phase-1-4]
+    paths:
+      - 'apps/api/src/crm_v4.js'
+      - 'apps/api/src/crm_v4_extra.js'
+      - 'apps/api/src/loyalty_v4.js'
+      - 'apps/api/src/bpm_v4.js'
+      - 'apps/api/src/office_v4_extra.js'
+      - 'apps/api/src/campaign_v4.js'
+      - 'apps/api/src/finance_v3_controls.js'
+      - 'apps/api/src/finance_v3_extra.js'
+      - 'apps/web/phase13-ui.js'
+      - 'apps/web/phase14-ui.js'
+      - '.github/workflows/phase14-wire.yml'
+permissions:
+  contents: write
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: enterprise-phase-1-4
+      - name: Wire API and UI modules idempotently
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('apps/api/src/iran_extensions.js')
+          s=p.read_text()
+          imports=[
+            "import { registerFinanceV3ControlRoutes } from './finance_v3_controls.js';",
+            "import { registerFinanceV3ExtraRoutes } from './finance_v3_extra.js';",
+            "import { registerCrmV4Routes } from './crm_v4.js';",
+            "import { registerCrmV4ExtraRoutes } from './crm_v4_extra.js';",
+            "import { registerLoyaltyV4Routes } from './loyalty_v4.js';",
+            "import { registerBpmV4Routes } from './bpm_v4.js';",
+            "import { registerOfficeV4ExtraRoutes } from './office_v4_extra.js';",
+            "import { registerCampaignV4Routes } from './campaign_v4.js';",
+          ]
+          for line in imports:
+            if line not in s:
+              s=line+'\n'+s
+          marker='export function registerIranExtensionRoutes(app){'
+          calls=[
+            '  registerFinanceV3ControlRoutes(app);',
+            '  registerFinanceV3ExtraRoutes(app);',
+            '  registerCrmV4Routes(app);',
+            '  registerCrmV4ExtraRoutes(app);',
+            '  registerLoyaltyV4Routes(app);',
+            '  registerBpmV4Routes(app);',
+            '  registerOfficeV4ExtraRoutes(app);',
+            '  registerCampaignV4Routes(app);',
+          ]
+          if marker not in s: raise SystemExit('registerIranExtensionRoutes marker missing')
+          insert='\n'.join(calls)+'\n'
+          for c in calls:
+            s=s.replace(c+'\n','')
+          s=s.replace(marker,marker+'\n'+insert,1)
+          p.write_text(s)
+
+          h=Path('apps/web/index.html')
+          x=h.read_text()
+          for tag in ['  <script src="/phase13-ui.js" defer></script>','  <script src="/phase14-ui.js" defer></script>']:
+            if tag not in x:
+              x=x.replace('</body>',tag+'\n</body>')
+          h.write_text(x)
+          PY
+      - name: Syntax check wired server and UI
+        run: |
+          node --check apps/api/src/iran_extensions.js
+          node --check apps/web/phase13-ui.js
+          node --check apps/web/phase14-ui.js
+      - name: Commit wiring if changed
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name 'tarazpad-ci'
+          git config user.email 'tarazpad-ci@users.noreply.github.com'
+          git add apps/api/src/iran_extensions.js apps/web/index.html
+          git commit -m 'Wire Enterprise 1.4 CRM, loyalty, BPM and finance UI'
+          git push origin HEAD:enterprise-phase-1-4

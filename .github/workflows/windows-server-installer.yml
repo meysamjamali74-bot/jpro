@@ -43,6 +43,8 @@ jobs:
           Copy-Item 'apps/web/*' "$stage/app/apps/web" -Recurse -Force
           Copy-Item 'database/*' "$stage/app/database" -Recurse -Force
           Copy-Item 'installer/windows-server/Install-TarazpadServer.ps1' "$stage/Install-TarazpadServer.ps1" -Force
+          Copy-Item 'installer/windows-server/Install-DatabaseGuards.ps1' "$stage/Install-DatabaseGuards.ps1" -Force
+          Copy-Item 'installer/windows-server/HardClose-DatabaseGuards.sql' "$stage/HardClose-DatabaseGuards.sql" -Force
           Copy-Item (Get-Command node.exe).Source "$stage/runtime/node.exe" -Force
           "Tarazpad native web server payload $(Get-Date -Format o)" | Set-Content "$stage/BUILD-INFO.txt"
 
@@ -80,23 +82,52 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Install-TarazpadServer.ps1' -Raw))
+          $null=[scriptblock]::Create((Get-Content 'installer/windows-server/Install-DatabaseGuards.ps1' -Raw))
           $null=[scriptblock]::Create((Get-Content 'installer/windows-server/CI-TestNativeInstaller.ps1' -Raw))
+          if(!(Select-String -Path 'installer/windows-server/HardClose-DatabaseGuards.sql' -Pattern 'trg_journal_line_hard_close_delete' -Quiet)){throw 'Hard-close DB guard SQL is incomplete.'}
           node --check apps/api/src/server.js
           node --check apps/api/src/db.js
+          node --check apps/api/src/fiscal_lock_guard_v8.js
           node --check apps/web/app.js
           npm --prefix apps/api test
           if(!(Test-Path 'installer/windows-server/build/staging/app/apps/api/node_modules/mysql2')){throw 'Production dependencies were not staged.'}
+          if(!(Test-Path 'installer/windows-server/build/staging/Install-DatabaseGuards.ps1')){throw 'Database guard installer was not staged.'}
 
-      - name: Install NSIS build tool
+      - name: Install NSIS build tool with retries and fallback
         shell: powershell
-        run: choco install nsis -y --no-progress
+        run: |
+          $ErrorActionPreference='Continue'
+          $known=@('C:\Program Files (x86)\NSIS\makensis.exe','C:\Program Files\NSIS\makensis.exe')
+          $found=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if(!$found){$found=$known|Where-Object{Test-Path $_}|Select-Object -First 1}
+          if(!$found){
+            for($attempt=1;$attempt -le 3 -and !$found;$attempt++){
+              Write-Host "Chocolatey NSIS attempt $attempt of 3..."
+              choco install nsis -y --no-progress --force
+              $found=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+              if(!$found){$found=$known|Where-Object{Test-Path $_}|Select-Object -First 1}
+              if(!$found){Start-Sleep -Seconds (5*$attempt)}
+            }
+          }
+          if(!$found -and (Get-Command winget.exe -ErrorAction SilentlyContinue)){
+            Write-Host 'Chocolatey did not provide NSIS; trying Windows Package Manager fallback...'
+            winget install --id NSIS.NSIS --exact --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+            $found=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+            if(!$found){$found=$known|Where-Object{Test-Path $_}|Select-Object -First 1}
+          }
+          if(!$found){throw 'NSIS makensis.exe could not be installed from available build-tool sources.'}
+          Write-Host "NSIS ready: $found"
 
       - name: Build native offline Setup EXE
         working-directory: installer/windows-server
         shell: powershell
         run: |
+          $ErrorActionPreference='Stop'
           $makensis=(Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
-          if(!$makensis){$makensis='C:\Program Files (x86)\NSIS\makensis.exe'}
+          if(!$makensis){
+            $makensis=@('C:\Program Files (x86)\NSIS\makensis.exe','C:\Program Files\NSIS\makensis.exe')|Where-Object{Test-Path $_}|Select-Object -First 1
+          }
+          if(!$makensis){throw 'makensis.exe is unavailable after NSIS setup.'}
           & $makensis 'TarazpadServer.nsi'
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           $exe='build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe'
