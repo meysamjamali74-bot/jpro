@@ -13,6 +13,35 @@ $cfg=Get-Content $ConfigPath -Raw | ConvertFrom-Json
 if(!(Test-Path $cfg.mysqlExe)){throw "MySQL client not found: $($cfg.mysqlExe)"}
 if([string]::IsNullOrWhiteSpace([string]$cfg.mysqlRootPassword)){throw 'Tarazpad MySQL root credential is unavailable.'}
 
+# Finalize the backup runner using explicit native-command arguments. PowerShell 5.1
+# does not reliably expand property expressions when they are glued to -h/-P/-u.
+# Keeping this finalizer in the post-install hardening step also repairs existing
+# 1.8 installations the next time Setup.exe is run, without touching business data.
+$backup=@'
+$ErrorActionPreference='Stop'
+$root=Split-Path -Parent $MyInvocation.MyCommand.Path
+$cfg=Get-Content (Join-Path $root 'config\server.json') -Raw|ConvertFrom-Json
+$dir=Join-Path $root 'backups';New-Item $dir -ItemType Directory -Force|Out-Null
+$stamp=Get-Date -Format 'yyyyMMdd-HHmmss';$sql=Join-Path $dir "tarazpad-$stamp.sql";$zip=Join-Path $dir "tarazpad-$stamp.zip"
+$env:MYSQL_PWD=[string]$cfg.mysqlPassword
+$args=@('--protocol=tcp',"--host=$($cfg.mysqlHost)","--port=$($cfg.mysqlPort)","--user=$($cfg.mysqlUser)",'--single-transaction','--routines','--triggers','--events','--default-character-set=utf8mb4',[string]$cfg.mysqlDatabase)
+try{
+  & $cfg.mysqldumpExe @args 2>$null | Set-Content $sql -Encoding utf8
+  $dumpExit=$LASTEXITCODE
+} finally {
+  Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
+}
+if($dumpExit -ne 0 -or !(Test-Path $sql) -or (Get-Item $sql).Length -lt 128){
+  Remove-Item $sql -Force -ErrorAction SilentlyContinue
+  throw "Tarazpad backup failed: mysqldump exit=$dumpExit or dump output was empty."
+}
+Compress-Archive $sql $zip -CompressionLevel Optimal -Force
+if(!(Test-Path $zip) -or (Get-Item $zip).Length -lt 128){throw 'Tarazpad backup failed: ZIP archive was not created correctly.'}
+Remove-Item $sql -Force
+Get-ChildItem $dir -Filter 'tarazpad-*.zip'|Where-Object LastWriteTime -lt (Get-Date).AddDays(-30)|Remove-Item -Force
+'@
+$backup|Set-Content (Join-Path $Root 'Backup-Tarazpad.ps1') -Encoding utf8
+
 $env:MYSQL_PWD=[string]$cfg.mysqlRootPassword
 $trustEnabled=$false
 try{
