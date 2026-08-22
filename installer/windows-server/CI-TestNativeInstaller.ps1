@@ -5,12 +5,8 @@ $Exe=(Resolve-Path (Join-Path $PSScriptRoot 'build\Tarazpad-ERP-Web-Server-Setup
 $InstallRoot='C:\ProgramData\Tarazpad\server'
 
 Write-Host '[CI] Reserving port 8080 to verify dynamic web-port fallback...'
-$portBlocker=Start-Job -ScriptBlock {
-  $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any,8080)
-  $listener.Start()
-  try{while($true){Start-Sleep 1}}finally{$listener.Stop()}
-}
-Start-Sleep 2
+$portBlocker=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,8080)
+$portBlocker.Start()
 
 try{
   Write-Host '[CI] Preparing direct native-install test root...'
@@ -40,7 +36,7 @@ try{
   if(!(Get-ScheduledTask -TaskName 'Tarazpad ERP Server' -ErrorAction SilentlyContinue)){throw 'Tarazpad startup task missing.'}
   if(!(Get-ScheduledTask -TaskName 'Tarazpad ERP Daily Backup' -ErrorAction SilentlyContinue)){throw 'Tarazpad backup task missing.'}
 } finally {
-  if($portBlocker){Stop-Job $portBlocker -ErrorAction SilentlyContinue;Remove-Job $portBlocker -Force -ErrorAction SilentlyContinue}
+  if($portBlocker){$portBlocker.Stop()}
 }
 
 Write-Host '[CI] Breaking the app DB credential intentionally to verify safe recovery...'
