@@ -112,7 +112,7 @@ function Repair-ExistingDatabaseCredential($existing){
   if(-not $existing.mysqlRootPassword -or -not (Invoke-MySqlProbe $existing.mysqlExe ([int]$existing.mysqlPort) 'root' $existing.mysqlRootPassword)){throw 'Existing Tarazpad database credentials are inconsistent. Business data was not modified. Restore a valid server.json/root credential or use the database recovery procedure.'}
   $newSecret=New-Secret 48;$escaped=$newSecret.Replace("'","''");$sql="CREATE USER IF NOT EXISTS 'tarazpad_app'@'127.0.0.1' IDENTIFIED BY '$escaped'; ALTER USER 'tarazpad_app'@'127.0.0.1' IDENTIFIED BY '$escaped'; GRANT ALL PRIVILEGES ON tarazpad.* TO 'tarazpad_app'@'127.0.0.1'; FLUSH PRIVILEGES;"
   $hadPwd=Test-Path Env:MYSQL_PWD;$oldPwd=$env:MYSQL_PWD
-  try{$env:MYSQL_PWD=$existing.mysqlRootPassword;& $existing.mysqlExe --protocol=tcp --host=127.0.0.1 --port=$existing.mysqlPort --user=root --execute=$sql 2>$null | Out-Null;if($LASTEXITCODE -ne 0){throw "Database credential repair failed with code $LASTEXITCODE."}}finally{if($hadPwd){$env:MYSQL_PWD=$oldPwd}else{Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue}}
+  try{$env:MYSQL_PWD=$existing.mysqlRootPassword;& $existing.mysqlExe --protocol=tcp --host=127.0.0.1 --port=$($existing.mysqlPort) --user=root --execute=$sql 2>$null | Out-Null;if($LASTEXITCODE -ne 0){throw "Database credential repair failed with code $LASTEXITCODE."}}finally{if($hadPwd){$env:MYSQL_PWD=$oldPwd}else{Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue}}
   $existing.mysqlPassword=$newSecret
   if(-not (Invoke-MySqlProbe $existing.mysqlExe ([int]$existing.mysqlPort) $existing.mysqlUser $existing.mysqlPassword)){throw 'Database credential repair verification failed. Business data was not modified.'}
   Ok 'Tarazpad application database credential repaired safely; business data preserved.';return $existing
@@ -165,7 +165,7 @@ $backup=@'
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $MyInvocation.MyCommand.Path;$cfg=Get-Content (Join-Path $root 'config\server.json') -Raw|ConvertFrom-Json;$dir=Join-Path $root 'backups';New-Item $dir -ItemType Directory -Force|Out-Null
 $stamp=Get-Date -Format 'yyyyMMdd-HHmmss';$sql=Join-Path $dir "tarazpad-$stamp.sql";$zip=Join-Path $dir "tarazpad-$stamp.zip";$env:MYSQL_PWD=$cfg.mysqlPassword
-try{& $cfg.mysqldumpExe --protocol=tcp -h$cfg.mysqlHost -P$cfg.mysqlPort -u$cfg.mysqlUser --single-transaction --routines --triggers --events --default-character-set=utf8mb4 $cfg.mysqlDatabase 2>$null | Set-Content $sql -Encoding utf8;$dumpExit=$LASTEXITCODE}finally{Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue}
+try{& $cfg.mysqldumpExe --protocol=tcp -h$($cfg.mysqlHost) -P$($cfg.mysqlPort) -u$($cfg.mysqlUser) --single-transaction --routines --triggers --events --default-character-set=utf8mb4 $cfg.mysqlDatabase 2>$null | Set-Content $sql -Encoding utf8;$dumpExit=$LASTEXITCODE}finally{Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue}
 if($dumpExit -ne 0 -or !(Test-Path $sql) -or (Get-Item $sql).Length -lt 128){Remove-Item $sql -Force -ErrorAction SilentlyContinue;throw "Tarazpad backup failed: mysqldump exit=$dumpExit or dump output was empty."}
 Compress-Archive $sql $zip -CompressionLevel Optimal -Force;if(!(Test-Path $zip) -or (Get-Item $zip).Length -lt 128){throw 'Tarazpad backup failed: ZIP archive was not created correctly.'};Remove-Item $sql -Force;Get-ChildItem $dir -Filter 'tarazpad-*.zip'|Where-Object LastWriteTime -lt (Get-Date).AddDays(-30)|Remove-Item -Force
 '@
