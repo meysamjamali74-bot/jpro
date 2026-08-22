@@ -127,7 +127,7 @@ jobs:
           grep -q 'خرید، فروش و سود کالا' apps/web/phase18-ui.js
           grep -q 'لیست قیمت تصویری' apps/web/phase18-ui.js
           grep -q 'بارنامه و حمل' apps/web/phase18-ui.js
-          grep -q 'مرکز چاپ اسناد' apps/web/phase18-final-ui.js
+          grep -q 'مرکز چاپ حرفه‌ای اسناد' apps/web/phase18-final-ui.js
           grep -q 'حساب‌های بانکی' apps/web/phase18-final-ui.js
 
       - name: Diagnostics
