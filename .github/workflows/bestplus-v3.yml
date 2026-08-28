@@ -1,0 +1,85 @@
+name: BESTPLUS v3 Windows Build
+
+on:
+  push:
+    branches: [ bestplus-v3 ]
+    paths:
+      - 'BESTPLUS-v3-src.zip'
+      - 'BESTPLUS/**'
+      - '.github/workflows/bestplus-v3.yml'
+  pull_request:
+    paths:
+      - 'BESTPLUS-v3-src.zip'
+      - 'BESTPLUS/**'
+      - '.github/workflows/bestplus-v3.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract BESTPLUS source
+        shell: pwsh
+        run: Expand-Archive -Path BESTPLUS-v3-src.zip -DestinationPath . -Force
+      - name: Apply release fixes
+        shell: pwsh
+        run: |
+          $p = 'BESTPLUS/UI/EditForms.cs'
+          $s = Get-Content $p -Raw
+          $s = $s.Replace('var id=Database.ScalarLong("SELECT last_insert_rowid()")','var id=Database.ScalarLong("SELECT COALESCE(MAX(id),0) FROM persons")')
+          $first = $s.IndexOf('SELECT COALESCE(MAX(id),0) FROM persons')
+          $second = $s.IndexOf('SELECT COALESCE(MAX(id),0) FROM persons', $first + 1)
+          if ($second -ge 0) { $s = $s.Remove($second, 'SELECT COALESCE(MAX(id),0) FROM persons'.Length).Insert($second, 'SELECT COALESCE(MAX(id),0) FROM products') }
+          $s = $s.Replace('Database.ScalarLong("SELECT last_insert_rowid()").ToString(),f.Values[1]','Database.ScalarLong("SELECT COALESCE(MAX(id),0) FROM warehouses").ToString(),f.Values[1]')
+          $s = $s.Replace('Database.ScalarLong("SELECT last_insert_rowid()").ToString(),_user.Text.Trim()','Database.ScalarLong("SELECT COALESCE(MAX(id),0) FROM users").ToString(),_user.Text.Trim()')
+          Set-Content $p $s -Encoding utf8
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore BESTPLUS/Bestplus.csproj
+      - name: Publish x64
+        run: dotnet publish BESTPLUS/Bestplus.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o BESTPLUS/publish/win-x64
+      - name: Publish x86
+        run: dotnet publish BESTPLUS/Bestplus.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o BESTPLUS/publish/win-x86
+      - name: Runtime self-test x64
+        shell: pwsh
+        run: |
+          & "BESTPLUS/publish/win-x64/BESTPLUS.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw "x64 self-test failed: $LASTEXITCODE" }
+      - name: Runtime self-test x86
+        shell: pwsh
+        run: |
+          & "BESTPLUS/publish/win-x86/BESTPLUS.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw "x86 self-test failed: $LASTEXITCODE" }
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "BESTPLUS\installer\BESTPLUS.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash BESTPLUS/installer/output/BESTPLUS-Setup.exe -Algorithm SHA256 | Format-List | Out-File BESTPLUS/installer/output/SHA256.txt
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BESTPLUS-v3-Windows-Installer
+          path: |
+            BESTPLUS/installer/output/BESTPLUS-Setup.exe
+            BESTPLUS/installer/output/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload portable builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: BESTPLUS-v3-Portable
+          path: |
+            BESTPLUS/publish/win-x64/BESTPLUS.exe
+            BESTPLUS/publish/win-x86/BESTPLUS.exe
+          retention-days: 30
