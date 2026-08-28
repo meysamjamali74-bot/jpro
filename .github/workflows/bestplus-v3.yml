@@ -2,33 +2,59 @@ name: BESTPLUS v3 Windows Build
 
 on:
   push:
-    branches: [ bestplus-v3 ]
+    branches: [bestplus-v3]
     paths:
-      - 'BESTPLUS-v3-src.zip'
       - 'BESTPLUS/**'
+      - '.release/bestplus-v3-patch/**'
       - '.github/workflows/bestplus-v3.yml'
   pull_request:
+    branches: [main]
     paths:
-      - 'BESTPLUS-v3-src.zip'
       - 'BESTPLUS/**'
+      - '.release/bestplus-v3-patch/**'
       - '.github/workflows/bestplus-v3.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    runs-on: windows-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
+    runs-on: windows-2025
+    timeout-minutes: 30
 
-      - name: Recover validated BESTPLUS source
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct verified source patch
         shell: pwsh
         run: |
-          $safeInvoice = Join-Path $env:RUNNER_TEMP 'InvoiceForm.correct.cs'
-          Copy-Item 'BESTPLUS/UI/InvoiceForm.cs' $safeInvoice -Force
-          & 7z x 'BESTPLUS-v3-src.zip' -y
-          Write-Host "7-Zip exit code (known damaged archive entry may return non-zero): $LASTEXITCODE"
-          Copy-Item $safeInvoice 'BESTPLUS/UI/InvoiceForm.cs' -Force
+          $ErrorActionPreference = 'Stop'
+          $parts = @(
+            '.release/bestplus-v3-patch/part0.bin',
+            '.release/bestplus-v3-patch/part1.bin',
+            '.release/bestplus-v3-patch/part2.bin',
+            '.release/bestplus-v3-patch/part3.bin'
+          )
+          $patch = Join-Path $env:RUNNER_TEMP 'BESTPLUS-source-patch.zip'
+          $out = [System.IO.File]::Open($patch, [System.IO.FileMode]::Create)
+          try {
+            foreach ($part in $parts) {
+              if (!(Test-Path $part)) { throw "Missing source patch part: $part" }
+              $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $part))
+              $out.Write($bytes, 0, $bytes.Length)
+            }
+          }
+          finally { $out.Dispose() }
+
+          $expected = '81f0ac24b59d7a360c0e62e3101e93703e957a94ba57432c727edfd21ac37e7a'
+          $actual = (Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Source patch SHA256: $actual"
+          if ($actual -ne $expected) { throw "Source patch SHA256 mismatch" }
+
+          Expand-Archive -Path $patch -DestinationPath . -Force
+
           $required = @(
             'BESTPLUS/Bestplus.csproj','BESTPLUS/app.manifest','BESTPLUS/Program.cs',
             'BESTPLUS/Core/AppPaths.cs','BESTPLUS/Core/PersianDate.cs','BESTPLUS/Core/Security.cs',
@@ -41,20 +67,7 @@ jobs:
             if (!(Test-Path $f)) { throw "Required source file missing: $f" }
             if ((Get-Item $f).Length -eq 0) { throw "Required source file is empty: $f" }
           }
-          Write-Host "Recovered all $($required.Count) required source files."
-
-      - name: Apply release fixes
-        shell: pwsh
-        run: |
-          $p = 'BESTPLUS/UI/EditForms.cs'
-          $s = Get-Content $p -Raw
-          $s = $s.Replace('var id=Database.ScalarLong("SELECT last_insert_rowid()")','var id=Database.ScalarLong("SELECT COALESCE(MAX(id),0) FROM persons")')
-          $first = $s.IndexOf('SELECT COALESCE(MAX(id),0) FROM persons')
-          $second = $s.IndexOf('SELECT COALESCE(MAX(id),0) FROM persons', $first + 1)
-          if ($second -ge 0) { $s = $s.Remove($second, 'SELECT COALESCE(MAX(id),0) FROM persons'.Length).Insert($second, 'SELECT COALESCE(MAX(id),0) FROM products') }
-          $s = $s.Replace('Database.ScalarLong("SELECT last_insert_rowid()").ToString(),f.Values[1]','Database.ScalarLong("SELECT COALESCE(MAX(id),0) FROM warehouses").ToString(),f.Values[1]')
-          $s = $s.Replace('Database.ScalarLong("SELECT last_insert_rowid()").ToString(),_user.Text.Trim()','Database.ScalarLong("SELECT COALESCE(MAX(id),0) FROM users").ToString(),_user.Text.Trim()')
-          Set-Content $p $s -Encoding utf8
+          Write-Host "Validated all $($required.Count) required source files."
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
@@ -64,7 +77,7 @@ jobs:
       - name: Restore
         run: dotnet restore BESTPLUS/Bestplus.csproj
 
-      - name: Build release
+      - name: Build Release
         run: dotnet build BESTPLUS/Bestplus.csproj -c Release --no-restore
 
       - name: Publish x64
@@ -76,44 +89,61 @@ jobs:
       - name: Runtime self-test x64
         shell: pwsh
         run: |
-          & "BESTPLUS/publish/win-x64/BESTPLUS.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { throw "x64 self-test failed: $LASTEXITCODE" }
+          & 'BESTPLUS/publish/win-x64/BESTPLUS.exe' --self-test
+          if ($LASTEXITCODE -ne 0) { throw "x64 self-test failed with exit code $LASTEXITCODE" }
 
       - name: Runtime self-test x86
         shell: pwsh
         run: |
-          & "BESTPLUS/publish/win-x86/BESTPLUS.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { throw "x86 self-test failed: $LASTEXITCODE" }
+          & 'BESTPLUS/publish/win-x86/BESTPLUS.exe' --self-test
+          if ($LASTEXITCODE -ne 0) { throw "x86 self-test failed with exit code $LASTEXITCODE" }
 
       - name: Install Inno Setup
+        shell: pwsh
         run: choco install innosetup -y --no-progress
 
-      - name: Build installer
+      - name: Build Installer
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "BESTPLUS\installer\BESTPLUS.iss"
-          if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (!$iscc) { $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' }
+          if (!(Test-Path $iscc)) { throw 'ISCC.exe not found' }
+          & $iscc 'BESTPLUS/installer/BESTPLUS.iss'
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          if (!(Test-Path 'BESTPLUS/installer/output/BESTPLUS-Setup.exe')) { throw 'Installer output missing' }
 
-      - name: Hash outputs
+      - name: Package portable builds and hashes
         shell: pwsh
         run: |
-          Get-FileHash BESTPLUS/installer/output/BESTPLUS-Setup.exe -Algorithm SHA256 | Format-List | Out-File BESTPLUS/installer/output/SHA256.txt
+          New-Item -ItemType Directory -Force -Path BESTPLUS/release | Out-Null
+          Compress-Archive -Path BESTPLUS/publish/win-x64/* -DestinationPath BESTPLUS/release/BESTPLUS-v3-win-x64.zip -Force
+          Compress-Archive -Path BESTPLUS/publish/win-x86/* -DestinationPath BESTPLUS/release/BESTPLUS-v3-win-x86.zip -Force
+          Copy-Item BESTPLUS/installer/output/BESTPLUS-Setup.exe BESTPLUS/release/BESTPLUS-v3-Setup.exe -Force
+          $files = @(
+            'BESTPLUS/release/BESTPLUS-v3-Setup.exe',
+            'BESTPLUS/release/BESTPLUS-v3-win-x64.zip',
+            'BESTPLUS/release/BESTPLUS-v3-win-x86.zip'
+          )
+          $lines = foreach ($f in $files) {
+            $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$h  $([System.IO.Path]::GetFileName($f))"
+          }
+          $lines | Set-Content -Encoding ascii BESTPLUS/release/SHA256SUMS.txt
+          Get-Content BESTPLUS/release/SHA256SUMS.txt
 
-      - name: Upload installer
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: BESTPLUS-v3-Windows-Installer
-          path: |
-            BESTPLUS/installer/output/BESTPLUS-Setup.exe
-            BESTPLUS/installer/output/SHA256.txt
+          name: BESTPLUS-v3-Windows
+          path: BESTPLUS/release/*
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload portable builds
-        uses: actions/upload-artifact@v4
-        with:
-          name: BESTPLUS-v3-Portable
-          path: |
-            BESTPLUS/publish/win-x64/BESTPLUS.exe
-            BESTPLUS/publish/win-x86/BESTPLUS.exe
-          retention-days: 30
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/bestplus-v3'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "bestplus-v3-build-${{ github.run_number }}"
+          gh release create $tag BESTPLUS/release/BESTPLUS-v3-Setup.exe BESTPLUS/release/BESTPLUS-v3-win-x64.zip BESTPLUS/release/BESTPLUS-v3-win-x86.zip BESTPLUS/release/SHA256SUMS.txt --repo '${{ github.repository }}' --title "BESTPLUS v3 Windows Build ${{ github.run_number }}" --notes "Verified Windows build. x64 and x86 runtime self-tests and SQLite integrity_check passed before release creation. Commit: ${{ github.sha }}"
