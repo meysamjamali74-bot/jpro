@@ -17,12 +17,32 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Extract BESTPLUS source
+
+      - name: Recover validated BESTPLUS source
         shell: pwsh
-        run: tar -xf BESTPLUS-v3-src.zip
+        run: |
+          $safeInvoice = Join-Path $env:RUNNER_TEMP 'InvoiceForm.correct.cs'
+          Copy-Item 'BESTPLUS/UI/InvoiceForm.cs' $safeInvoice -Force
+          & 7z x 'BESTPLUS-v3-src.zip' -y
+          Write-Host "7-Zip exit code (known damaged archive entry may return non-zero): $LASTEXITCODE"
+          Copy-Item $safeInvoice 'BESTPLUS/UI/InvoiceForm.cs' -Force
+          $required = @(
+            'BESTPLUS/Bestplus.csproj','BESTPLUS/app.manifest','BESTPLUS/Program.cs',
+            'BESTPLUS/Core/AppPaths.cs','BESTPLUS/Core/PersianDate.cs','BESTPLUS/Core/Security.cs',
+            'BESTPLUS/Data/Database.cs','BESTPLUS/Services/BusinessService.cs',
+            'BESTPLUS/UI/Ui.cs','BESTPLUS/UI/LoginForm.cs','BESTPLUS/UI/MainForm.cs','BESTPLUS/UI/EditForms.cs',
+            'BESTPLUS/UI/InvoiceForm.cs','BESTPLUS/UI/TreasuryCheckForms.cs',
+            'BESTPLUS/Printing/InvoicePrintDocument.cs','BESTPLUS/installer/BESTPLUS.iss','BESTPLUS/README-FA.txt'
+          )
+          foreach ($f in $required) {
+            if (!(Test-Path $f)) { throw "Required source file missing: $f" }
+            if ((Get-Item $f).Length -eq 0) { throw "Required source file is empty: $f" }
+          }
+          Write-Host "Recovered all $($required.Count) required source files."
+
       - name: Apply release fixes
         shell: pwsh
         run: |
@@ -35,37 +55,50 @@ jobs:
           $s = $s.Replace('Database.ScalarLong("SELECT last_insert_rowid()").ToString(),f.Values[1]','Database.ScalarLong("SELECT COALESCE(MAX(id),0) FROM warehouses").ToString(),f.Values[1]')
           $s = $s.Replace('Database.ScalarLong("SELECT last_insert_rowid()").ToString(),_user.Text.Trim()','Database.ScalarLong("SELECT COALESCE(MAX(id),0) FROM users").ToString(),_user.Text.Trim()')
           Set-Content $p $s -Encoding utf8
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
       - name: Restore
         run: dotnet restore BESTPLUS/Bestplus.csproj
+
+      - name: Build release
+        run: dotnet build BESTPLUS/Bestplus.csproj -c Release --no-restore
+
       - name: Publish x64
         run: dotnet publish BESTPLUS/Bestplus.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o BESTPLUS/publish/win-x64
+
       - name: Publish x86
         run: dotnet publish BESTPLUS/Bestplus.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o BESTPLUS/publish/win-x86
+
       - name: Runtime self-test x64
         shell: pwsh
         run: |
           & "BESTPLUS/publish/win-x64/BESTPLUS.exe" --self-test
           if ($LASTEXITCODE -ne 0) { throw "x64 self-test failed: $LASTEXITCODE" }
+
       - name: Runtime self-test x86
         shell: pwsh
         run: |
           & "BESTPLUS/publish/win-x86/BESTPLUS.exe" --self-test
           if ($LASTEXITCODE -ne 0) { throw "x86 self-test failed: $LASTEXITCODE" }
+
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
+
       - name: Build installer
         shell: pwsh
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "BESTPLUS\installer\BESTPLUS.iss"
           if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+
       - name: Hash outputs
         shell: pwsh
         run: |
           Get-FileHash BESTPLUS/installer/output/BESTPLUS-Setup.exe -Algorithm SHA256 | Format-List | Out-File BESTPLUS/installer/output/SHA256.txt
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
@@ -75,6 +108,7 @@ jobs:
             BESTPLUS/installer/output/SHA256.txt
           if-no-files-found: error
           retention-days: 30
+
       - name: Upload portable builds
         uses: actions/upload-artifact@v4
         with:
