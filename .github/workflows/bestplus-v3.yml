@@ -69,6 +69,26 @@ jobs:
           }
           Write-Host "Validated all $($required.Count) required source files."
 
+      - name: Apply release quality fixes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $invoice = 'BESTPLUS/UI/InvoiceForm.cs'
+          $s = Get-Content $invoice -Raw
+          $before = $s
+          $s = $s.Replace('public long ProductId;public string Code="",ProductName="",Unit="";', 'public long ProductId;public string Code="";public new string ProductName="";public string Unit="";')
+          if ($s -eq $before) { throw 'InvoiceForm warning fix was not applied' }
+          Set-Content -Path $invoice -Value $s -Encoding utf8
+
+          $print = 'BESTPLUS/Printing/InvoicePrintDocument.cs'
+          $s = Get-Content $print -Raw
+          $before = $s
+          $s = $s.Replace('private readonly long _invoiceId;private readonly bool _formal,_a5;private DataRow? _inv,_person;', 'private readonly long _invoiceId;private readonly bool _formal,_a5;private DataRow? _inv;')
+          $s = $s.Replace('var g=e.Graphics;g.TextRenderingHint=', 'var g=e.Graphics??throw new InvalidOperationException("Graphics unavailable.");g.TextRenderingHint=')
+          if ($s -eq $before) { throw 'InvoicePrintDocument warning fixes were not applied' }
+          Set-Content -Path $print -Value $s -Encoding utf8
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
@@ -148,4 +168,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "bestplus-v3-build-${{ github.run_number }}"
-          gh release create $tag BESTPLUS/release/BESTPLUS-v3-Setup.exe BESTPLUS/release/BESTPLUS-v3-win-x64.zip BESTPLUS/release/BESTPLUS-v3-win-x86.zip BESTPLUS/release/SHA256SUMS.txt --repo '${{ github.repository }}' --title "BESTPLUS v3 Windows Build ${{ github.run_number }}" --notes "Verified Windows build. x64 and x86 runtime self-tests and SQLite integrity_check passed before release creation. Commit: ${{ github.sha }}"
+          gh release create $tag BESTPLUS/release/BESTPLUS-v3-Setup.exe BESTPLUS/release/BESTPLUS-v3-win-x64.zip BESTPLUS/release/BESTPLUS-v3-win-x86.zip BESTPLUS/release/SHA256SUMS.txt --repo '${{ github.repository }}' --target '${{ github.sha }}' --title "BESTPLUS v3 Windows Build ${{ github.run_number }}" --notes "Verified Windows build. Zero C# warnings are enforced as errors. x64 and x86 runtime self-tests and SQLite integrity_check passed before release creation. Commit: ${{ github.sha }}"

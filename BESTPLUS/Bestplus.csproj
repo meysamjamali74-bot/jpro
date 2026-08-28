@@ -5,6 +5,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AssemblyName>BESTPLUS</AssemblyName>
     <RootNamespace>Bestplus</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
