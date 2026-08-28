@@ -89,14 +89,16 @@ jobs:
       - name: Runtime self-test x64
         shell: pwsh
         run: |
-          & 'BESTPLUS/publish/win-x64/BESTPLUS.exe' --self-test
-          if ($LASTEXITCODE -ne 0) { throw "x64 self-test failed with exit code $LASTEXITCODE" }
+          $p = Start-Process -FilePath 'BESTPLUS/publish/win-x64/BESTPLUS.exe' -ArgumentList '--self-test' -Wait -PassThru
+          Write-Host "x64 self-test exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "x64 self-test failed with exit code $($p.ExitCode)" }
 
       - name: Runtime self-test x86
         shell: pwsh
         run: |
-          & 'BESTPLUS/publish/win-x86/BESTPLUS.exe' --self-test
-          if ($LASTEXITCODE -ne 0) { throw "x86 self-test failed with exit code $LASTEXITCODE" }
+          $p = Start-Process -FilePath 'BESTPLUS/publish/win-x86/BESTPLUS.exe' -ArgumentList '--self-test' -Wait -PassThru
+          Write-Host "x86 self-test exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "x86 self-test failed with exit code $($p.ExitCode)" }
 
       - name: Install Inno Setup
         shell: pwsh
