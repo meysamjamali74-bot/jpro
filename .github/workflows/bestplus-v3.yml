@@ -1,0 +1,171 @@
+name: BESTPLUS v3 Windows Build
+
+on:
+  push:
+    branches: [bestplus-v3]
+    paths:
+      - 'BESTPLUS/**'
+      - '.release/bestplus-v3-patch/**'
+      - '.github/workflows/bestplus-v3.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'BESTPLUS/**'
+      - '.release/bestplus-v3-patch/**'
+      - '.github/workflows/bestplus-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct verified source patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parts = @(
+            '.release/bestplus-v3-patch/part0.bin',
+            '.release/bestplus-v3-patch/part1.bin',
+            '.release/bestplus-v3-patch/part2.bin',
+            '.release/bestplus-v3-patch/part3.bin'
+          )
+          $patch = Join-Path $env:RUNNER_TEMP 'BESTPLUS-source-patch.zip'
+          $out = [System.IO.File]::Open($patch, [System.IO.FileMode]::Create)
+          try {
+            foreach ($part in $parts) {
+              if (!(Test-Path $part)) { throw "Missing source patch part: $part" }
+              $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $part))
+              $out.Write($bytes, 0, $bytes.Length)
+            }
+          }
+          finally { $out.Dispose() }
+
+          $expected = '81f0ac24b59d7a360c0e62e3101e93703e957a94ba57432c727edfd21ac37e7a'
+          $actual = (Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Source patch SHA256: $actual"
+          if ($actual -ne $expected) { throw "Source patch SHA256 mismatch" }
+
+          Expand-Archive -Path $patch -DestinationPath . -Force
+
+          $required = @(
+            'BESTPLUS/Bestplus.csproj','BESTPLUS/app.manifest','BESTPLUS/Program.cs',
+            'BESTPLUS/Core/AppPaths.cs','BESTPLUS/Core/PersianDate.cs','BESTPLUS/Core/Security.cs',
+            'BESTPLUS/Data/Database.cs','BESTPLUS/Services/BusinessService.cs',
+            'BESTPLUS/UI/Ui.cs','BESTPLUS/UI/LoginForm.cs','BESTPLUS/UI/MainForm.cs','BESTPLUS/UI/EditForms.cs',
+            'BESTPLUS/UI/InvoiceForm.cs','BESTPLUS/UI/TreasuryCheckForms.cs',
+            'BESTPLUS/Printing/InvoicePrintDocument.cs','BESTPLUS/installer/BESTPLUS.iss','BESTPLUS/README-FA.txt'
+          )
+          foreach ($f in $required) {
+            if (!(Test-Path $f)) { throw "Required source file missing: $f" }
+            if ((Get-Item $f).Length -eq 0) { throw "Required source file is empty: $f" }
+          }
+          Write-Host "Validated all $($required.Count) required source files."
+
+      - name: Apply release quality fixes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $invoice = 'BESTPLUS/UI/InvoiceForm.cs'
+          $s = Get-Content $invoice -Raw
+          $before = $s
+          $s = $s.Replace('public long ProductId;public string Code="",ProductName="",Unit="";', 'public long ProductId;public string Code="";public new string ProductName="";public string Unit="";')
+          if ($s -eq $before) { throw 'InvoiceForm warning fix was not applied' }
+          Set-Content -Path $invoice -Value $s -Encoding utf8
+
+          $print = 'BESTPLUS/Printing/InvoicePrintDocument.cs'
+          $s = Get-Content $print -Raw
+          $before = $s
+          $s = $s.Replace('private readonly long _invoiceId;private readonly bool _formal,_a5;private DataRow? _inv,_person;', 'private readonly long _invoiceId;private readonly bool _formal,_a5;private DataRow? _inv;')
+          $s = $s.Replace('var g=e.Graphics;g.TextRenderingHint=', 'var g=e.Graphics??throw new InvalidOperationException("Graphics unavailable.");g.TextRenderingHint=')
+          if ($s -eq $before) { throw 'InvoicePrintDocument warning fixes were not applied' }
+          Set-Content -Path $print -Value $s -Encoding utf8
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore BESTPLUS/Bestplus.csproj
+
+      - name: Build Release
+        run: dotnet build BESTPLUS/Bestplus.csproj -c Release --no-restore
+
+      - name: Publish x64
+        run: dotnet publish BESTPLUS/Bestplus.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o BESTPLUS/publish/win-x64
+
+      - name: Publish x86
+        run: dotnet publish BESTPLUS/Bestplus.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o BESTPLUS/publish/win-x86
+
+      - name: Runtime self-test x64
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath 'BESTPLUS/publish/win-x64/BESTPLUS.exe' -ArgumentList '--self-test' -Wait -PassThru
+          Write-Host "x64 self-test exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "x64 self-test failed with exit code $($p.ExitCode)" }
+
+      - name: Runtime self-test x86
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath 'BESTPLUS/publish/win-x86/BESTPLUS.exe' -ArgumentList '--self-test' -Wait -PassThru
+          Write-Host "x86 self-test exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "x86 self-test failed with exit code $($p.ExitCode)" }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build Installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (!$iscc) { $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' }
+          if (!(Test-Path $iscc)) { throw 'ISCC.exe not found' }
+          & $iscc 'BESTPLUS/installer/BESTPLUS.iss'
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          if (!(Test-Path 'BESTPLUS/installer/output/BESTPLUS-Setup.exe')) { throw 'Installer output missing' }
+
+      - name: Package portable builds and hashes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path BESTPLUS/release | Out-Null
+          Compress-Archive -Path BESTPLUS/publish/win-x64/* -DestinationPath BESTPLUS/release/BESTPLUS-v3-win-x64.zip -Force
+          Compress-Archive -Path BESTPLUS/publish/win-x86/* -DestinationPath BESTPLUS/release/BESTPLUS-v3-win-x86.zip -Force
+          Copy-Item BESTPLUS/installer/output/BESTPLUS-Setup.exe BESTPLUS/release/BESTPLUS-v3-Setup.exe -Force
+          $files = @(
+            'BESTPLUS/release/BESTPLUS-v3-Setup.exe',
+            'BESTPLUS/release/BESTPLUS-v3-win-x64.zip',
+            'BESTPLUS/release/BESTPLUS-v3-win-x86.zip'
+          )
+          $lines = foreach ($f in $files) {
+            $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$h  $([System.IO.Path]::GetFileName($f))"
+          }
+          $lines | Set-Content -Encoding ascii BESTPLUS/release/SHA256SUMS.txt
+          Get-Content BESTPLUS/release/SHA256SUMS.txt
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BESTPLUS-v3-Windows
+          path: BESTPLUS/release/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/bestplus-v3'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "bestplus-v3-build-${{ github.run_number }}"
+          gh release create $tag BESTPLUS/release/BESTPLUS-v3-Setup.exe BESTPLUS/release/BESTPLUS-v3-win-x64.zip BESTPLUS/release/BESTPLUS-v3-win-x86.zip BESTPLUS/release/SHA256SUMS.txt --repo '${{ github.repository }}' --target '${{ github.sha }}' --title "BESTPLUS v3 Windows Build ${{ github.run_number }}" --notes "Verified Windows build. Zero C# warnings are enforced as errors. x64 and x86 runtime self-tests and SQLite integrity_check passed before release creation. Commit: ${{ github.sha }}"
