@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Extract BESTPLUS source
         shell: pwsh
-        run: Expand-Archive -Path BESTPLUS-v3-src.zip -DestinationPath . -Force
+        run: tar -xf BESTPLUS-v3-src.zip
       - name: Apply release fixes
         shell: pwsh
         run: |
