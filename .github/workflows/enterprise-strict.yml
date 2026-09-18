@@ -138,7 +138,9 @@ jobs:
           RULE_COL=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/commissions/rules -H "$AA" -H 'content-type: application/json' -d "{\"title\":\"پورسانت وصول\",\"basis\":\"COLLECTION\",\"baseRate\":2,\"assignments\":[{\"salespersonUserId\":$SALES_ID,\"effectiveFrom\":\"2026-08-01\"}]}" | jq -r .id)
           curl -fsS -X POST http://127.0.0.1:8080/api/iran/commissions/targets -H "$AA" -H 'content-type: application/json' -d "{\"salespersonUserId\":$SALES_ID,\"periodStart\":\"2026-08-01\",\"periodEnd\":\"2026-08-31\",\"targetType\":\"NET_SALES\",\"targetAmount\":200000}" | jq -e '.ok==true'
           RUN=$(curl -fsS -X POST http://127.0.0.1:8080/api/iran/commissions/run -H "$AA" -H 'content-type: application/json' -d "{\"periodStart\":\"2026-08-01\",\"periodEnd\":\"2026-08-31\",\"salespersonUserId\":$SALES_ID}")
-          echo "$RUN" | jq -e 'length==2 and (map(select(.basis=="GROSS_PROFIT" and .grossProfit==60000 and .commissionAmount==3000))|length)==1 and (map(select(.basis=="COLLECTION" and .collected==200000 and .commissionAmount==4000))|length)==1'
+          # Commission uses treasury POSTED/RECONCILED receipt dates. The trip cash handover happens today,
+          # outside the historical August test period, so only INV1 is collection-eligible in this period.
+          echo "$RUN" | jq -e 'length==2 and (map(select(.basis=="GROSS_PROFIT" and .grossProfit==60000 and .commissionAmount==1500))|length)==1 and (map(select(.basis=="COLLECTION" and .collected==100000 and .commissionAmount==2000))|length)==1'
           COMM=$(echo "$RUN" | jq -r '.[0].id')
           curl -fsS -X POST "http://127.0.0.1:8080/api/iran/commissions/results/$COMM/review" -H "$RA" -H 'content-type: application/json' -d '{}' | jq -e '.status=="REVIEWED"'
           curl -fsS -X POST "http://127.0.0.1:8080/api/iran/commissions/results/$COMM/approve" -H "$FA" -H 'content-type: application/json' -d '{}' | jq -e '.status=="APPROVED"'
