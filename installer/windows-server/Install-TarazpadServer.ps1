@@ -149,7 +149,7 @@ FLUSH PRIVILEGES;
 
 Step 'Preparing Tarazpad ERP Web Server...';New-Item $DataRoot,$ConfigRoot,$LogRoot,$BackupRoot -ItemType Directory -Force|Out-Null
 $node=Resolve-Node;$db=Ensure-MySql
-if($db.ExistingConfig){$cfg=$db.ExistingConfig;$cfg.nodeExe=$node;$cfg.webPort=Resolve-WebPort $cfg}else{$webPort=Resolve-WebPort $null;$cfg=[ordered]@{version='0.2.0';installedAt=(Get-Date).ToString('o');nodeExe=$node;mysqlExe=$db.Mysql;mysqldExe=$db.Mysqld;mysqldumpExe=$db.Dump;mysqlBase=$db.Base;mysqlVersion=$db.Version;mysqlSource=$db.Source;mysqlHost='127.0.0.1';mysqlPort=$db.Port;mysqlDatabase='tarazpad';mysqlUser='tarazpad_app';mysqlPassword=$db.AppSecret;mysqlRootPassword=$db.RootSecret;jwtSecret=$db.JwtSecret;adminEmail='admin@tarazpad.local';adminPassword=$db.AdminSecret;adminName='مدیر سیستم';webPort=$webPort}}
+if($db.ExistingConfig){$cfg=$db.ExistingConfig;$cfg.nodeExe=$node;$cfg.webPort=Resolve-WebPort $cfg}else{$webPort=Resolve-WebPort $null;$cfg=[ordered]@{version='1.8.0';installedAt=(Get-Date).ToString('o');nodeExe=$node;mysqlExe=$db.Mysql;mysqldExe=$db.Mysqld;mysqldumpExe=$db.Dump;mysqlBase=$db.Base;mysqlVersion=$db.Version;mysqlSource=$db.Source;mysqlHost='127.0.0.1';mysqlPort=$db.Port;mysqlDatabase='tarazpad';mysqlUser='tarazpad_app';mysqlPassword=$db.AppSecret;mysqlRootPassword=$db.RootSecret;jwtSecret=$db.JwtSecret;adminEmail='admin@tarazpad.local';adminPassword=$db.AdminSecret;adminName='مدیر سیستم';webPort=$webPort}}
 $cfg|ConvertTo-Json -Depth 5|Set-Content $ConfigPath -Encoding utf8;& icacls $ConfigPath /inheritance:r /grant:r 'SYSTEM:(F)' 'Administrators:(F)'|Out-Null
 $WebPort=[int]$cfg.webPort
 

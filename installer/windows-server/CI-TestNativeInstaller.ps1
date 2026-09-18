@@ -1,7 +1,9 @@
 $ErrorActionPreference='Stop'
 $RepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Stage=(Resolve-Path (Join-Path $PSScriptRoot 'build\staging')).Path
-$Exe=(Resolve-Path (Join-Path $PSScriptRoot 'build\Tarazpad-ERP-Web-Server-Setup-0.2.0.exe')).Path
+$setup=Get-ChildItem (Join-Path $PSScriptRoot 'build') -Filter 'Tarazpad-ERP-Web-Server-Setup-*.exe' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+if(!$setup){throw 'Tarazpad Setup EXE was not produced.'}
+$Exe=$setup.FullName
 $InstallRoot='C:\ProgramData\Tarazpad\server'
 
 Write-Host '[CI] Reserving port 8080 to verify dynamic web-port fallback...'
