@@ -2,7 +2,7 @@ name: Tarazpad Native Windows Server Installer
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, enterprise-phase-1-8-release]
     paths:
       - 'apps/api/**'
       - 'apps/web/**'
@@ -130,7 +130,7 @@ jobs:
           if(!$makensis){throw 'makensis.exe is unavailable after NSIS setup.'}
           & $makensis 'TarazpadServer.nsi'
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          $exe='build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe'
+          $exe='build/Tarazpad-ERP-Web-Server-Setup-1.8.0.exe'
           if(!(Test-Path $exe)){throw 'Setup EXE not produced.'}
           Get-FileHash $exe -Algorithm SHA256 | Format-List | Out-File 'build/SHA256SUMS.txt'
 
@@ -153,9 +153,9 @@ jobs:
       - name: Upload native Windows web server setup
         uses: actions/upload-artifact@v4
         with:
-          name: Tarazpad-ERP-Native-Web-Server-Setup
+          name: Tarazpad-ERP-Enterprise-1.8-Windows-Server-Setup
           path: |
-            installer/windows-server/build/Tarazpad-ERP-Web-Server-Setup-0.2.0.exe
+            installer/windows-server/build/Tarazpad-ERP-Web-Server-Setup-1.8.0.exe
             installer/windows-server/build/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90
