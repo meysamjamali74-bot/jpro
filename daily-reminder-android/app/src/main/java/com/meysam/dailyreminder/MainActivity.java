@@ -144,10 +144,10 @@ public class MainActivity extends Activity {
         int volume = audio == null ? -1 : audio.getStreamVolume(AudioManager.STREAM_ALARM);
         int maxVolume = audio == null ? -1 : audio.getStreamMaxVolume(AudioManager.STREAM_ALARM);
         String message = "مجوز زنگ دقیق: " + (exact ? "فعال" : "غیرفعال")
-            + "\\nمجوز اعلان: " + (notify ? "فعال" : "غیرفعال")
-            + "\\nبدون محدودیت باتری: " + (battery ? "بله" : "خیر")
-            + "\\nبلندی صدای آلارم: " + volume + "/" + maxVolume
-            + "\\n\\nرویدادهای اخیر:\\n" + Diagnostics.read(this);
+            + "\nمجوز اعلان: " + (notify ? "فعال" : "غیرفعال")
+            + "\nبدون محدودیت باتری: " + (battery ? "بله" : "خیر")
+            + "\nبلندی صدای آلارم: " + volume + "/" + maxVolume
+            + "\n\nرویدادهای اخیر:\n" + Diagnostics.read(this);
         new AlertDialog.Builder(this).setTitle("گزارش فنی یادآور")
             .setMessage(message).setPositiveButton("بستن", null).show();
     }
