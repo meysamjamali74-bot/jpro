@@ -35,6 +35,16 @@ public final class AlarmScheduler {
         scheduleAll(context, json);
     }
 
+    public static boolean scheduleTest(Context context) {
+        AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return false;
+        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) return false;
+        PendingIntent pi = pending(context, "native_alarm_test", "آزمایش زنگ پنج ثانیه‌ای", PendingIntent.FLAG_UPDATE_CURRENT);
+        if (pi == null) return false;
+        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 60000, pi);
+        return true;
+    }
+
     private static void cancelAll(Context context, String json) {
         try {
             JSONArray tasks = new JSONArray(json);
