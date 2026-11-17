@@ -10,6 +10,10 @@ import android.os.Build;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 
 public final class AlarmScheduler {
     private static final String PREFS = "daily_reminder_native";
@@ -41,8 +45,18 @@ public final class AlarmScheduler {
         if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) return false;
         PendingIntent pi = pending(context, "native_alarm_test", "آزمایش زنگ پنج ثانیه‌ای", PendingIntent.FLAG_UPDATE_CURRENT);
         if (pi == null) return false;
-        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 60000, pi);
-        return true;
+        try {
+            AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(
+                System.currentTimeMillis() + 60000, PendingIntent.getActivity(context, 30,
+                new Intent(context, MainActivity.class),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+            am.setAlarmClock(info, pi);
+            Diagnostics.write(context, "TEST_SCHEDULED");
+            return true;
+        } catch (Exception e) {
+            Diagnostics.write(context, "TEST_FAILED " + e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     private static void cancelAll(Context context, String json) {
@@ -71,8 +85,8 @@ public final class AlarmScheduler {
                 String due = task.optString("due_at", "");
                 if (due.isEmpty() || due.equals("null")) continue;
                 long when;
-                try { when = Instant.parse(due).toEpochMilli(); }
-                catch (Exception ex) { continue; }
+                try { when = parseTime(due); }
+                catch (Exception ex) { Diagnostics.write(context, "INVALID_TIME " + due); continue; }
                 if (when <= now) continue;
                 PendingIntent pi = pending(context, task.optString("id"), task.optString("title"), PendingIntent.FLAG_UPDATE_CURRENT);
                 if (pi == null) continue;
@@ -80,13 +94,24 @@ public final class AlarmScheduler {
                     if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
                         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
                     } else {
-                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+                        PendingIntent show = PendingIntent.getActivity(context, 31,
+                            new Intent(context, MainActivity.class),
+                            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                        am.setAlarmClock(new AlarmManager.AlarmClockInfo(when, show), pi);
                     }
                 } catch (SecurityException ex) {
                     am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
                 }
             }
         } catch (Exception ignored) { }
+    }
+
+    private static long parseTime(String due) {
+        try { return Instant.parse(due).toEpochMilli(); }
+        catch (DateTimeParseException ignored) { }
+        try { return OffsetDateTime.parse(due).toInstant().toEpochMilli(); }
+        catch (DateTimeParseException ignored) { }
+        return LocalDateTime.parse(due).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
     private static PendingIntent pending(Context context, String id, String title, int flag) {
