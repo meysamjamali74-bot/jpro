@@ -21,6 +21,7 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.app.Activity;
 
 public class MainActivity extends Activity {
@@ -52,6 +53,17 @@ public class MainActivity extends Activity {
         exactButton.setTextSize(11);
         exactButton.setOnClickListener(v -> requestExactAlarmAccess());
         toolbar.addView(exactButton);
+
+        Button testButton = new Button(this);
+        testButton.setText("تست ۱ دقیقه");
+        testButton.setTextSize(11);
+        testButton.setOnClickListener(v -> {
+            boolean scheduled = AlarmScheduler.scheduleTest(this);
+            Toast.makeText(this, scheduled ? "زنگ آزمایشی یک دقیقه دیگر؛ صفحه را قفل کن" :
+                "اول مجوز زنگ دقیق را فعال کن", Toast.LENGTH_LONG).show();
+            if (!scheduled) requestExactAlarmAccess();
+        });
+        toolbar.addView(testButton);
 
         Button batteryButton = new Button(this);
         batteryButton.setText("باتری");
