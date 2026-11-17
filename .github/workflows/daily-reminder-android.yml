@@ -23,8 +23,9 @@ jobs:
           gradle-version: '8.10.2'
       - name: Install Android SDK
         run: |
-          echo "y" | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          SDKMANAGER="$(find /usr/local/lib/android/sdk/cmdline-tools -name sdkmanager | head -1)"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - name: Build debug APK
         run: gradle -p daily-reminder-android --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
